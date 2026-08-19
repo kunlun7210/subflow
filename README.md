@@ -34,11 +34,11 @@ Clash / Stash / Surge / Shadowrocket / Loon / Quantumult X / Hiddify / Egern
 
 - 7 种客户端配置：Clash / Stash、Surge、Shadowrocket、Loon、Quantumult X、Hiddify（sing-box）与 Egern
 - 按节点名称自动生成香港、台湾、新加坡、日本、美国、韩国等地区策略组
-- 内置 ACL4SSR 全分组定制版、默认、精简和全局代理四套规则，也可粘贴或导入自己的规则
+- 内置 ACL4SSR 全分组定制版、默认、精简和未删减 `ACL4SSR_Online_Full` 四套规则，也可粘贴或导入自己的规则
 - 常用的“ACL4SSR 全分组 · 定制”与 GitHub 公开规则同步，并移除微软 Bing、OneDrive/云盘、微软服务、网易云音乐、游戏平台、巴哈姆特和 Netflix 分组
 - 独立 AI 分组：覆盖 ChatGPT/OpenAI、Gemini、Claude、xAI/Grok、Copilot、Perplexity 等服务
 - AI 分组沿用 ACL4SSR 全分组的默认候选：主选择、自动选择、现有地区组、手动选择和直连，不强制限定国家
-- 复制与下载
+- 复制与下载；下载文件名自动加入本机日期，例如 `subflow-clash 2026.08.19.yaml`
 
 生成器会明确统计目标客户端不兼容而跳过的节点。例如 Surge 不支持 VLESS，流转不会生成一条“看起来能导入但实际不能连接”的假配置。生成的客户端配置会下载 ACL4SSR 的公开规则列表；订阅地址与节点凭据不会随规则请求发送。
 

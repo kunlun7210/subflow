@@ -68,7 +68,7 @@ export interface ParseResult {
 }
 
 export type ClientTarget = "clash" | "surge" | "shadowrocket" | "loon" | "quanx" | "hiddify" | "egern";
-export type RulePreset = "full" | "balanced" | "mini" | "global";
+export type RulePreset = "full" | "balanced" | "mini" | "heavy";
 
 export interface GeneratedConfig {
   content: string;

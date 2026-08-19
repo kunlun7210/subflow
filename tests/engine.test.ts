@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import * as yaml from "js-yaml";
+import { configurationFilename, formatDownloadDate } from "../lib/filename.ts";
 import { generateConfig, generateConfigAsync } from "../lib/generator.ts";
 import { parseSubscription } from "../lib/parser.ts";
 import { isHttpSubscriptionURL, isIpSubscriptionURL, loadSubscriptionInput, SubscriptionLoadError } from "../lib/source.ts";
@@ -66,11 +67,23 @@ test("custom Full preset omits requested groups while keeping SteamCN", () => {
   assert.match(content, /Ruleset\/SteamCN\.list/);
 });
 
+test("heavy Full preset restores the complete ACL4SSR groups", () => {
+  const content = generateConfig(parseSubscription([ss, trojan].join("\n")).nodes, "clash", "heavy").content;
+  for (const source of ["Bing.list", "OneDrive.list", "Microsoft.list", "NetEaseMusic.list", "Epic.list", "Origin.list", "Sony.list", "Steam.list", "Nintendo.list", "Netflix.list", "Bahamut.list"]) assert.match(content, new RegExp(`/${source.replace(".", "\\.")}`));
+  for (const group of ["微软 Bing", "微软云盘", "微软服务", "网易音乐", "游戏平台", "巴哈姆特", "奈飞视频"]) assert.match(content, new RegExp(group));
+});
+
+test("adds local calendar date to downloaded configuration filenames", () => {
+  const date = new Date(2026, 7, 19, 23, 30);
+  assert.equal(formatDownloadDate(date), "2026.08.19");
+  assert.equal(configurationFilename("clash", "yaml", date), "subflow-clash 2026.08.19.yaml");
+});
+
 test("seven clients expose honest compatibility counts", () => {
   const nodes = parseSubscription(allLinks.join("\n")).nodes;
   const expected: Record<string, number> = { clash: 12, surge: 9, shadowrocket: 12, loon: 10, quanx: 8, hiddify: 11, egern: 10 };
   for (const [target, count] of Object.entries(expected)) {
-    const generated = generateConfig(nodes, target as Parameters<typeof generateConfig>[1], "global");
+    const generated = generateConfig(nodes, target as Parameters<typeof generateConfig>[1], "mini");
     assert.equal(generated.supported, count, target);
     assert.equal(generated.skipped, 12 - count, target);
     assert.ok(generated.content.length > 100, target);
@@ -95,7 +108,7 @@ test("inline-rule clients resolve public rules without sending node data", async
 
 test("neutralizes config syntax in untrusted node names", () => {
   const malicious = "trojan://pw@safe.example.com:443#Bad%5BRule%5D%0AFINAL%2CREJECT";
-  const generated = generateConfig(parseSubscription(malicious).nodes, "loon", "global");
+  const generated = generateConfig(parseSubscription(malicious).nodes, "loon", "mini");
   assert.doesNotMatch(generated.content, /Bad\[Rule\]/);
   assert.match(generated.content, /Bad［Rule］ FINAL，REJECT/);
 });

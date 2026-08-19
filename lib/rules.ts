@@ -13,6 +13,14 @@ export const POLICIES = {
   domesticMedia: "🌏 国内媒体",
   googleFCM: "📢 谷歌 FCM",
   apple: "🍎 苹果服务",
+  bing: "Ⓜ️ 微软 Bing",
+  oneDrive: "Ⓜ️ 微软云盘",
+  microsoft: "Ⓜ️ 微软服务",
+  netease: "🎶 网易音乐",
+  games: "🎮 游戏平台",
+  netflix: "🎥 奈飞视频",
+  netflixNodes: "🎥 奈飞节点",
+  bahamut: "📺 巴哈姆特",
   direct: "🎯 全球直连",
   ad: "🛑 广告拦截",
   cleanup: "🍃 应用净化",
@@ -62,6 +70,39 @@ const full: RuleSource[] = [
   { id: "Download", file: "Download.list", policy: POLICIES.direct },
 ];
 
+// The unmodified ACL4SSR_Online_Full ruleset offered as the heavy preset.
+// Keep this separate from the owner's trimmed Full preset above.
+const fullOriginal: RuleSource[] = [
+  ...common,
+  { id: "GoogleFCM", file: "Ruleset/GoogleFCM.list", policy: POLICIES.googleFCM },
+  { id: "GoogleCN", file: "GoogleCN.list", policy: POLICIES.direct },
+  { id: "SteamCN", file: "Ruleset/SteamCN.list", policy: POLICIES.direct },
+  { id: "Bing", file: "Bing.list", policy: POLICIES.bing },
+  { id: "OneDrive", file: "OneDrive.list", policy: POLICIES.oneDrive },
+  { id: "Microsoft", file: "Microsoft.list", policy: POLICIES.microsoft },
+  { id: "Apple", file: "Apple.list", policy: POLICIES.apple },
+  { id: "Telegram", file: "Telegram.list", policy: POLICIES.telegram },
+  { id: "AI", file: "Ruleset/AI.list", policy: POLICIES.ai },
+  { id: "OpenAI", file: "Ruleset/OpenAi.list", policy: POLICIES.ai },
+  { id: "NetEaseMusic", file: "Ruleset/NetEaseMusic.list", policy: POLICIES.netease },
+  { id: "Epic", file: "Ruleset/Epic.list", policy: POLICIES.games },
+  { id: "Origin", file: "Ruleset/Origin.list", policy: POLICIES.games },
+  { id: "Sony", file: "Ruleset/Sony.list", policy: POLICIES.games },
+  { id: "Steam", file: "Ruleset/Steam.list", policy: POLICIES.games },
+  { id: "Nintendo", file: "Ruleset/Nintendo.list", policy: POLICIES.games },
+  { id: "YouTube", file: "Ruleset/YouTube.list", policy: POLICIES.youtube },
+  { id: "Netflix", file: "Ruleset/Netflix.list", policy: POLICIES.netflix },
+  { id: "Bahamut", file: "Ruleset/Bahamut.list", policy: POLICIES.bahamut },
+  { id: "BilibiliHMT", file: "Ruleset/BilibiliHMT.list", policy: POLICIES.bilibili },
+  { id: "Bilibili", file: "Ruleset/Bilibili.list", policy: POLICIES.bilibili },
+  { id: "ChinaMedia", file: "ChinaMedia.list", policy: POLICIES.domesticMedia },
+  { id: "ProxyMedia", file: "ProxyMedia.list", policy: POLICIES.foreignMedia },
+  { id: "ProxyGFW", file: "ProxyGFWlist.list", policy: POLICIES.main },
+  { id: "ChinaDomain", file: "ChinaDomain.list", policy: POLICIES.direct },
+  { id: "ChinaCompanyIp", file: "ChinaCompanyIp.list", policy: POLICIES.direct },
+  { id: "Download", file: "Download.list", policy: POLICIES.direct },
+];
+
 const balanced: RuleSource[] = [
   ...common,
   { id: "GoogleFCM", file: "Ruleset/GoogleFCM.list", policy: POLICIES.googleFCM },
@@ -93,14 +134,14 @@ export const PRESET_META: Record<RulePreset, { title: string; description: strin
   full: { title: "ACL4SSR 全分组 · 定制", description: "完整分流，已移除你不使用的 7 类服务组", groups: 17, sources: full.length },
   balanced: { title: "ACL4SSR 默认", description: "广告、AI、媒体、苹果与国内外基础分流", groups: 11, sources: balanced.length },
   mini: { title: "ACL4SSR 精简", description: "节点选择、自动选择、直连与拦截", groups: 7, sources: mini.length },
-  global: { title: "全局代理 + AI", description: "AI 沿用默认候选，其余流量走主策略", groups: 5, sources: 1 },
+  heavy: { title: "ACL4SSR_Online_Full 全分组", description: "完整 29 组，适合重度用户使用", groups: 29, sources: fullOriginal.length },
 };
 
 export function ruleSources(preset: RulePreset): RuleSource[] {
   if (preset === "full") return full;
   if (preset === "balanced") return balanced;
   if (preset === "mini") return mini;
-  return [{ id: "AI", file: "Ruleset/AI.list", policy: POLICIES.ai }];
+  return fullOriginal;
 }
 
 export function ruleSourceURL(source: RuleSource): string {
@@ -147,7 +188,6 @@ export async function resolveRuleLines(
   fetcher: typeof fetch = fetch,
 ): Promise<ResolvedRule[]> {
   const custom = parseCustomRules(customText);
-  if (preset === "global") return custom;
   const responses = await Promise.all(ruleSources(preset).map(async source => {
     const response = await fetcher(ruleSourceURL(source), { cache: "no-store", credentials: "omit", referrerPolicy: "no-referrer" });
     if (!response.ok) throw new Error(`ruleset ${source.id} HTTP ${response.status}`);

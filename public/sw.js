@@ -1,5 +1,5 @@
-const CACHE_NAME = "subflow-v3";
-const APP_SHELL = ["./", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png", "./og.png"];
+const CACHE_NAME = "subflow-v4";
+const APP_SHELL = ["./", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png", "./og.png", "./clients/surge.png", "./clients/shadowrocket.png", "./clients/clash-stash.png", "./clients/loon.png", "./clients/quantumult-x.png", "./clients/hiddify.png", "./clients/egern.png"];
 
 self.addEventListener("install", event => {
   event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(APP_SHELL)).then(() => self.skipWaiting()));

@@ -1,21 +1,24 @@
 "use client";
+/* Client logos are already optimized local 160px assets; framework image optimization is unnecessary. */
+/* eslint-disable @next/next/no-img-element */
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { generateConfigAsync } from "../lib/generator";
+import { configurationFilename } from "../lib/filename";
 import { parseSubscription } from "../lib/parser";
 import { groupNodesByRegion } from "../lib/regions";
 import { PRESET_META, targetNeedsInlineRules } from "../lib/rules";
 import { isHttpSubscriptionURL, loadSubscriptionInput, SubscriptionLoadError } from "../lib/source";
 import type { ClientTarget, GeneratedConfig, ProxyNode, RulePreset } from "../lib/model";
 
-const targets: Array<{ id: ClientTarget; name: string; note: string; letter: string }> = [
-  { id: "clash", name: "Clash / Stash", note: "Mihomo YAML", letter: "C" },
-  { id: "surge", name: "Surge", note: "完整配置", letter: "S" },
-  { id: "shadowrocket", name: "Shadowrocket", note: "完整配置", letter: "R" },
-  { id: "loon", name: "Loon", note: "完整配置", letter: "L" },
-  { id: "quanx", name: "Quantumult X", note: "本地规则", letter: "Q" },
-  { id: "hiddify", name: "Hiddify", note: "sing-box JSON", letter: "H" },
-  { id: "egern", name: "Egern", note: "YAML 配置", letter: "E" },
+const targets: Array<{ id: ClientTarget; name: string; note: string; icon: string }> = [
+  { id: "surge", name: "Surge", note: "完整配置", icon: "./clients/surge.png" },
+  { id: "shadowrocket", name: "Shadowrocket", note: "完整配置", icon: "./clients/shadowrocket.png" },
+  { id: "clash", name: "Clash / Stash", note: "Mihomo YAML", icon: "./clients/clash-stash.png" },
+  { id: "loon", name: "Loon", note: "完整配置", icon: "./clients/loon.png" },
+  { id: "quanx", name: "Quantumult X", note: "本地规则", icon: "./clients/quantumult-x.png" },
+  { id: "hiddify", name: "Hiddify", note: "sing-box JSON", icon: "./clients/hiddify.png" },
+  { id: "egern", name: "Egern", note: "YAML 配置", icon: "./clients/egern.png" },
 ];
 
 const protocolLabels: Record<ProxyNode["protocol"], string> = {
@@ -23,7 +26,7 @@ const protocolLabels: Record<ProxyNode["protocol"], string> = {
   hysteria: "Hysteria", hysteria2: "Hysteria 2", tuic: "TUIC", wireguard: "WireGuard",
   anytls: "AnyTLS", socks5: "SOCKS5", http: "HTTP(S)",
 };
-const presetOrder: RulePreset[] = ["full", "balanced", "mini", "global"];
+const presetOrder: RulePreset[] = ["full", "balanced", "mini", "heavy"];
 
 export default function Home() {
   const [source, setSource] = useState("");
@@ -31,7 +34,7 @@ export default function Home() {
   const [warnings, setWarnings] = useState<string[]>([]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const [target, setTarget] = useState<ClientTarget>("clash");
+  const [target, setTarget] = useState<ClientTarget>("surge");
   const [preset, setPreset] = useState<RulePreset>("full");
   const [customRules, setCustomRules] = useState("");
   const [generated, setGenerated] = useState<GeneratedConfig | null>(null);
@@ -123,7 +126,7 @@ export default function Home() {
   function downloadConfiguration() {
     if (!generated) return;
     const url = URL.createObjectURL(new Blob([generated.content], { type: "text/plain;charset=utf-8" }));
-    const anchor = document.createElement("a"); anchor.href = url; anchor.download = `subflow-${target}.${generated.extension}`; anchor.click(); URL.revokeObjectURL(url);
+    const anchor = document.createElement("a"); anchor.href = url; anchor.download = configurationFilename(target, generated.extension); anchor.click(); URL.revokeObjectURL(url);
   }
 
   function reset() { setSource(""); setNodes([]); setWarnings([]); setError(""); setCopied(false); setRawFallback(false); setRuleError(""); }
@@ -154,7 +157,7 @@ export default function Home() {
 
         <section className="target-card">
           <div className="section-heading compact"><div><p>03 / FORMAT</p><h2>选择目标客户端</h2></div></div>
-          <div className="target-grid">{targets.map((item, index) => <button key={item.id} type="button" className={target === item.id ? "target active" : "target"} onClick={() => setTarget(item.id)}><span className={`target-icon icon-${index}`}>{item.letter}</span><span><strong>{item.name}</strong><small>{item.note}</small></span><i aria-hidden="true" /></button>)}</div>
+          <div className="target-grid">{targets.map(item => <button key={item.id} type="button" className={target === item.id ? "target active" : "target"} onClick={() => setTarget(item.id)}><img className="target-icon" src={item.icon} alt="" aria-hidden="true" /><span><strong>{item.name}</strong><small>{item.note}</small></span><i aria-hidden="true" /></button>)}</div>
           <div className="rule-library">
             <div className="rule-library-heading"><div><strong>内置规则集</strong><small>AI 分组沿用 ACL4SSR 全分组的默认候选</small></div><span>与 GitHub 公开规则同步</span></div>
             <div className="rule-cards">{presetOrder.map(id => { const meta = PRESET_META[id]; return <button type="button" key={id} className={preset === id ? "rule-card active" : "rule-card"} onClick={() => setPreset(id)}><i aria-hidden="true" /><span><strong>{meta.title}{id === "full" && <em>常用</em>}</strong><small>{meta.description}</small><b>{meta.sources} 个公开规则集 · 约 {meta.groups} 组</b></span></button>; })}</div>
@@ -173,7 +176,7 @@ export default function Home() {
       </>}
     </section>
 
-    <section className="privacy-strip"><div><p>LOCAL-FIRST BY DESIGN</p><h2>你的 Token，只属于你的设备。</h2></div><div className="privacy-points"><span>本地解析</span><span>不设中转</span><span>可离线使用</span></div><p className="privacy-note">订阅只进入当前浏览器内存；遇到跨域限制时，流转会提示改用粘贴或文件。</p></section>
-    <footer><div className="footer-brand"><span className="brand-mark">流</span><strong>流转</strong></div><p>12 种协议 · 7 个客户端 · ACL4SSR 规则</p></footer>
+    <section className="privacy-strip"><div className="privacy-points"><span>本地解析</span><span>不设中转</span><span>可离线使用</span></div><p className="privacy-note">订阅只进入当前浏览器内存；遇到跨域限制时，流转会提示改用粘贴或文件。</p></section>
+    <footer><div className="footer-brand"><strong>流转</strong></div><p>12 种协议 · 7 个客户端 · ACL4SSR 规则</p></footer>
   </main>;
 }

@@ -72,23 +72,33 @@ function buildGroups(nodes: ProxyNode[], preset: RulePreset): PolicyGroup[] {
   ];
   for (const group of regionGroups) groups.push({ name: group.region.name, type: "url-test", members: group.nodes.map(node => node.name) });
 
-  if (preset !== "global") {
-    const choices = [POLICIES.main, POLICIES.auto, ...regionNames, POLICIES.manual, "DIRECT"];
-    const sourcePolicies = new Set(ruleSources(preset).map(source => source.policy));
-    const add = (name: string, members: string[]) => {
-      if (sourcePolicies.has(name) && !groups.some(group => group.name === name)) groups.push({ name, type: "select", members });
-    };
-    add(POLICIES.telegram, choices);
-    add(POLICIES.youtube, choices);
-    add(POLICIES.foreignMedia, choices);
-    add(POLICIES.domesticMedia, ["DIRECT", ...regionNames, POLICIES.main]);
-    add(POLICIES.googleFCM, ["DIRECT", POLICIES.main, POLICIES.auto, ...regionNames]);
-    add(POLICIES.apple, ["DIRECT", POLICIES.main, POLICIES.auto, ...regionNames]);
-    add(POLICIES.bilibili, ["DIRECT", ...regionNames.filter(name => /台湾|香港/.test(name)), POLICIES.main]);
-    add(POLICIES.direct, ["DIRECT", POLICIES.main, POLICIES.auto]);
-    add(POLICIES.ad, ["REJECT", "DIRECT"]);
-    add(POLICIES.cleanup, ["REJECT", "DIRECT"]);
+  const choices = [POLICIES.main, POLICIES.auto, ...regionNames, POLICIES.manual, "DIRECT"];
+  const directFirst = ["DIRECT", POLICIES.main, POLICIES.auto, ...regionNames, POLICIES.manual];
+  const sourcePolicies = new Set(ruleSources(preset).map(source => source.policy));
+  const add = (name: string, members: string[]) => {
+    if (sourcePolicies.has(name) && !groups.some(group => group.name === name)) groups.push({ name, type: "select", members });
+  };
+  add(POLICIES.telegram, choices);
+  add(POLICIES.youtube, choices);
+  add(POLICIES.foreignMedia, choices);
+  add(POLICIES.domesticMedia, ["DIRECT", ...regionNames, POLICIES.main, POLICIES.manual]);
+  add(POLICIES.googleFCM, directFirst);
+  add(POLICIES.apple, directFirst);
+  add(POLICIES.bing, directFirst);
+  add(POLICIES.oneDrive, directFirst);
+  add(POLICIES.microsoft, directFirst);
+  add(POLICIES.games, directFirst);
+  add(POLICIES.netease, ["DIRECT", POLICIES.main, POLICIES.auto, POLICIES.manual]);
+  if (sourcePolicies.has(POLICIES.netflix)) {
+    const netflixNodes = nodes.filter(node => /(奈飞|Netflix|\bNF\b|解锁|Media)/i.test(node.name)).map(node => node.name);
+    groups.push({ name: POLICIES.netflixNodes, type: "select", members: netflixNodes.length ? netflixNodes : [POLICIES.main] });
+    add(POLICIES.netflix, [POLICIES.netflixNodes, ...choices]);
   }
+  add(POLICIES.bahamut, [...regionNames.filter(name => /台湾/.test(name)), POLICIES.main, POLICIES.manual, "DIRECT"]);
+  add(POLICIES.bilibili, ["DIRECT", ...regionNames.filter(name => /台湾|香港/.test(name)), POLICIES.main]);
+  add(POLICIES.direct, ["DIRECT", POLICIES.main, POLICIES.auto]);
+  add(POLICIES.ad, ["REJECT", "DIRECT"]);
+  add(POLICIES.cleanup, ["REJECT", "DIRECT"]);
   groups.push({ name: POLICIES.final, type: "select", members: [POLICIES.main, POLICIES.auto, "DIRECT", ...regionNames] });
   return groups;
 }
@@ -149,8 +159,8 @@ function clash(nodes: ProxyNode[], preset: RulePreset, customText: string): stri
   const rules = [
     ...ruleSources(preset).map(source => `RULE-SET,ACL4SSR-${source.id},${source.policy}`),
     ...customRuleLines(customText),
-    ...(preset === "global" ? [] : ["GEOIP,CN,DIRECT,no-resolve"]),
-    `MATCH,${preset === "global" ? POLICIES.main : POLICIES.final}`,
+    "GEOIP,CN,DIRECT,no-resolve",
+    `MATCH,${POLICIES.final}`,
   ];
   const document = { "mixed-port": 7890, "allow-lan": false, mode: "rule", "log-level": "warning", ipv6: true, proxies: nodes.map(clashProxy), "proxy-groups": clashGroups(buildGroups(nodes, preset)), "rule-providers": providers, rules };
   return `# 由「流转」在本机生成\n# ACL4SSR 公开规则由客户端直接更新；订阅凭据不会写入规则 URL\n\n${yaml.dump(document, { noRefs: true, lineWidth: -1 })}`;
@@ -229,7 +239,7 @@ function surgeLike(nodes: ProxyNode[], preset: RulePreset, customText: string, s
   return [
     `# 由「流转」在本机为 ${targetName} 生成`, "# ACL4SSR 公开规则由客户端直接更新", "", "[General]", "loglevel = notify", "ipv6 = true", "dns-server = 223.5.5.5, 119.29.29.29", "skip-proxy = 127.0.0.1, localhost, *.local",
     ...wireGuardSections(nodes), "", "[Proxy]", ...nodes.map((node, index) => textNode(node, shadowrocket, index)), "", "[Proxy Group]", ...textGroups(buildGroups(nodes, preset)), "", "[Rule]",
-    ...remoteRuleLines(preset), ...customRuleLines(customText), ...(preset === "global" ? [] : ["GEOIP,CN,DIRECT,no-resolve"]), `FINAL,${preset === "global" ? POLICIES.main : POLICIES.final}`, "",
+    ...remoteRuleLines(preset), ...customRuleLines(customText), "GEOIP,CN,DIRECT,no-resolve", `FINAL,${POLICIES.final}`, "",
   ].join("\n");
 }
 
@@ -260,7 +270,7 @@ function loonNode(node: ProxyNode): string {
 function loon(nodes: ProxyNode[], preset: RulePreset, customText: string): string {
   return [
     "# 由「流转」在本机为 Loon 生成", "", "[General]", "ipv6 = true", "skip-proxy = 127.0.0.1, localhost, *.local", "", "[Proxy]", ...nodes.map(loonNode), "", "[Proxy Group]", ...textGroups(buildGroups(nodes, preset), true), "", "[Remote Rule]",
-    ...ruleSources(preset).map(source => `${ruleSourceURL(source)},policy=${source.policy},tag=ACL4SSR-${source.id},enabled=true`), "", "[Rule]", ...customRuleLines(customText), ...(preset === "global" ? [] : ["GEOIP,CN,DIRECT,no-resolve"]), `FINAL,${preset === "global" ? POLICIES.main : POLICIES.final}`, "",
+    ...ruleSources(preset).map(source => `${ruleSourceURL(source)},policy=${source.policy},tag=ACL4SSR-${source.id},enabled=true`), "", "[Rule]", ...customRuleLines(customText), "GEOIP,CN,DIRECT,no-resolve", `FINAL,${POLICIES.final}`, "",
   ].join("\n");
 }
 
@@ -291,7 +301,7 @@ function quanX(nodes: ProxyNode[], preset: RulePreset, rules: ResolvedRule[]): s
   const policies = buildGroups(nodes, preset).map(group => group.type === "select"
     ? `static=${group.name}, ${group.members.map(member => member === "DIRECT" ? "direct" : member === "REJECT" ? "reject" : member).join(", ")}`
     : `url-latency-benchmark=${group.name}, ${group.members.join(", ")}, check-interval=300, alive-checking=false, tolerance=50`);
-  return ["# 由「流转」在本机为 Quantumult X 生成", "", "[general]", "dns-server=223.5.5.5", "", "[policy]", ...policies, "", "[server_local]", ...nodes.map(quanXNode), "", "[filter_local]", ...(rules.map(quanXRule).filter(Boolean) as string[]), ...(preset === "global" ? [] : ["geoip, cn, direct, no-resolve"]), `final, ${preset === "global" ? POLICIES.main : POLICIES.final}`, ""].join("\n");
+  return ["# 由「流转」在本机为 Quantumult X 生成", "", "[general]", "dns-server=223.5.5.5", "", "[policy]", ...policies, "", "[server_local]", ...nodes.map(quanXNode), "", "[filter_local]", ...(rules.map(quanXRule).filter(Boolean) as string[]), "geoip, cn, direct, no-resolve", `final, ${POLICIES.final}`, ""].join("\n");
 }
 
 function singBoxTLS(node: ProxyNode): Record<string, unknown> | undefined {
@@ -335,7 +345,7 @@ function hiddify(nodes: ProxyNode[], preset: RulePreset, rules: ResolvedRule[]):
     ...groups.map(group => group.type === "select" ? { type: "selector", tag: group.name, outbounds: group.members.map(member => member === "DIRECT" ? "direct" : member === "REJECT" ? "block" : member) } : { type: "urltest", tag: group.name, outbounds: group.members, url: TEST_URL, interval: "5m" }),
     { type: "direct", tag: "direct" }, { type: "block", tag: "block" },
   ];
-  return JSON.stringify({ log: { level: "warn" }, outbounds, route: { auto_detect_interface: true, rules: rules.map(singBoxRule).filter(Boolean), final: preset === "global" ? POLICIES.main : POLICIES.final } }, null, 2);
+  return JSON.stringify({ log: { level: "warn" }, outbounds, route: { auto_detect_interface: true, rules: rules.map(singBoxRule).filter(Boolean), final: POLICIES.final } }, null, 2);
 }
 
 function egernProxy(node: ProxyNode): Record<string, unknown> {
@@ -364,7 +374,7 @@ function egernRule(rule: ResolvedRule): Record<string, unknown> | null {
 
 function egern(nodes: ProxyNode[], preset: RulePreset, rules: ResolvedRule[]): string {
   const groups = buildGroups(nodes, preset).map(group => group.type === "select" ? { select: { name: group.name, policies: group.members } } : { auto_test: { name: group.name, policies: group.members, interval: 600, tolerance: 100, timeout: 5 } });
-  const document = { proxies: nodes.map(egernProxy), "proxy-groups": groups, rules: [...rules.map(egernRule).filter(Boolean), { default: { policy: preset === "global" ? POLICIES.main : POLICIES.final } }] };
+  const document = { proxies: nodes.map(egernProxy), "proxy-groups": groups, rules: [...rules.map(egernRule).filter(Boolean), { default: { policy: POLICIES.final } }] };
   return `# 由「流转」在本机为 Egern 生成\n${yaml.dump(document, { noRefs: true, lineWidth: -1 })}`;
 }
 
