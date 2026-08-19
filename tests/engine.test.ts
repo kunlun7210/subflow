@@ -130,10 +130,10 @@ test("Surge 5 profile uses documented testing and remote-rule parameters", () =>
   assert.doesNotMatch(generated.content, /Unsupported VLESS/);
 });
 
-test("Surge preserves Hysteria 2 certificate and bandwidth settings", () => {
-  const explicit = parseSubscription("hy2://secret@hy2.invalid:443?sni=hy2.invalid&skip-cert-verify=false&download-bandwidth=5000#Synthetic%20HY2").nodes;
+test("Surge uses compatible Hysteria 2 certificate handling and preserves bandwidth", () => {
+  const explicit = parseSubscription("hy2://secret@hy2.invalid:443?sni=hy2.invalid&skip-cert-verify=false&download-bandwidth=5000&ports=20000-21000,22000#Synthetic%20HY2").nodes;
   const generated = generateConfig(explicit, "surge", "mini");
-  assert.match(generated.content, / = hysteria2, hy2\.invalid, 443, password=secret, sni=hy2\.invalid, skip-cert-verify=false, download-bandwidth=5000, udp-relay=true/);
+  assert.match(generated.content, / = hysteria2, hy2\.invalid, 443, password=secret, sni=hy2\.invalid, skip-cert-verify=true, download-bandwidth=5000, port-hopping=20000-21000;22000, udp-relay=true/);
 
   const compatibleDefault = parseSubscription("hy2://secret@hy2.invalid:443?sni=hy2.invalid#Synthetic%20HY2").nodes;
   assert.match(generateConfig(compatibleDefault, "surge", "mini").content, /skip-cert-verify=true, download-bandwidth=1000, udp-relay=true/);

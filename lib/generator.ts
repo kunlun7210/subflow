@@ -214,13 +214,15 @@ function textNode(node: ProxyNode, shadowrocket: boolean, index: number): string
     fields = ["hysteria", node.server, String(node.port), `auth=${confValue(node.password ?? "")}`, `upmbps=${node.upMbps ?? 50}`, `downmbps=${node.downMbps ?? 100}`, ...tlsOptions(node, false), "udp=1"];
     if (node.obfs) fields.push(`obfsParam=${confValue(node.obfs)}`);
   } else if (node.protocol === "hysteria2") {
-    const skipCertVerify = node.skipCertVerify ?? true;
     fields = [
       "hysteria2", node.server, String(node.port), `password=${confValue(node.password ?? "")}`,
       ...(node.sni ? [`sni=${confValue(node.sni)}`] : []),
-      `skip-cert-verify=${skipCertVerify}`,
+      // Providers can publish a strict Clash value while their working Surge
+      // profile disables verification for the same Hysteria 2 endpoint.
+      "skip-cert-verify=true",
       ...(node.alpn ? [`alpn=${confValue(node.alpn)}`] : []),
       `download-bandwidth=${node.downMbps ?? 1000}`,
+      ...(node.portHopping ? [`port-hopping=${confValue(node.portHopping.replace(/,/g, ";"))}`] : []),
       "udp-relay=true",
     ];
     if (node.obfsPassword) fields.push(`${shadowrocket ? "obfsParam" : "salamander-password"}=${confValue(node.obfsPassword)}`);
