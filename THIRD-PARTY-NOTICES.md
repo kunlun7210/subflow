@@ -9,7 +9,7 @@ Architecture and compatibility behavior were studied from:
 - License: MIT
 - Copyright: Tower contributors
 
-This project is an independent TypeScript/PWA implementation. Tower's bundled ACL4SSR snapshots and IP database are not included.
+This project is an independent TypeScript/PWA implementation. Protocol and client compatibility coverage was adapted from Tower's documented matrix; Tower's bundled ACL4SSR snapshots and IP database are not included.
 
 ## ACL4SSR
 

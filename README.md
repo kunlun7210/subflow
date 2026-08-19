@@ -7,7 +7,7 @@
              ↓
        浏览器本地解析
              ↓
-Clash / Stash / Surge / Shadowrocket / Loon
+Clash / Stash / Surge / Shadowrocket / Loon / Quantumult X / Hiddify / Egern
 ```
 
 订阅 URL、Token、密码和节点不会发送给第三方转换服务，也不会写入仓库或浏览器持久存储。
@@ -26,19 +26,18 @@ Clash / Stash / Surge / Shadowrocket / Loon
 输入：
 
 - 普通或 URL-safe Base64 节点列表
-- SS、VMess、VLESS、Trojan、Hysteria 2（含 `hy2://`）分享链接
+- 12 种常见协议：SS、SSR、VMess、VLESS、Trojan、Hysteria、Hysteria 2、TUIC、WireGuard、AnyTLS、SOCKS5、HTTP(S)
 - Clash / Mihomo YAML
 - 本地文本或 YAML 文件
 
 输出：
 
-- Clash / Stash YAML
-- Surge 完整配置
-- Shadowrocket 可导入的 Clash YAML
-- Loon 完整配置
-- ACL4SSR 在线规则或全局代理
+- 7 种客户端配置：Clash / Stash、Surge、Shadowrocket、Loon、Quantumult X、Hiddify（sing-box）与 Egern
+- 按节点名称自动生成香港、台湾、新加坡、日本、美国、韩国等地区策略组
+- 内置 ACL4SSR 全分组定制版、默认、精简和全局代理四套规则，也可粘贴或导入自己的规则
+- 常用的“ACL4SSR 全分组 · 定制”与 GitHub 公开规则同步，并移除微软 Bing、OneDrive/云盘、微软服务、网易云音乐、游戏平台、巴哈姆特和 Netflix 分组
 - 独立 AI 分组：覆盖 ChatGPT/OpenAI、Gemini、Claude、xAI/Grok、Copilot、Perplexity 等服务
-- AI 自动选择只纳入名称明确标注为新加坡或日本的节点；没有合格节点时使用 `REJECT`，不会回落到直连、香港或澳门
+- AI 分组沿用 ACL4SSR 全分组的默认候选：主选择、自动选择、现有地区组、手动选择和直连，不强制限定国家
 - 复制与下载
 
 生成器会明确统计目标客户端不兼容而跳过的节点。例如 Surge 不支持 VLESS，流转不会生成一条“看起来能导入但实际不能连接”的假配置。生成的客户端配置会下载 ACL4SSR 的公开规则列表；订阅地址与节点凭据不会随规则请求发送。
@@ -77,7 +76,9 @@ npm run build:pages
 
 - `lib/parser.ts`：订阅、URI、Base64 与 Clash YAML 解析
 - `lib/model.ts`：统一节点模型
-- `lib/generator.ts`：四类目标配置生成与兼容性过滤
+- `lib/generator.ts`：七类目标配置生成与兼容性过滤
+- `lib/rules.ts`：ACL4SSR 规则预设、自定义规则与按客户端转换
+- `lib/regions.ts`：国家和地区识别与策略组生成
 - `app/page.tsx`：移动端优先的转换工作区
 - `public/sw.js`：离线应用外壳；不会缓存跨域订阅响应
 - `tests/engine.test.ts`：解析、生成、兼容跳过与配置注入防护
