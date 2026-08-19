@@ -9,7 +9,10 @@ interface PolicyGroup {
   members: string[];
 }
 
-const TEST_URL = "https://www.gstatic.com/generate_204";
+// Surge's documented examples and Tower both use the plain HTTP 204 endpoint.
+// Keeping one URL across generated clients also avoids treating a TLS failure
+// at the test endpoint as if every proxy were unavailable.
+const TEST_URL = "http://www.gstatic.com/generate_204";
 
 function safeName(value: string): string {
   return value.replace(/[\r\n]+/g, " ").replace(/=/g, "-").replace(/,/g, "，").replace(/#/g, "＃").replace(/;/g, "；").replace(/\[/g, "［").replace(/\]/g, "］").trim();
@@ -231,13 +234,13 @@ function textGroups(groups: PolicyGroup[], compact = false): string[] {
 }
 
 function remoteRuleLines(preset: RulePreset): string[] {
-  return ruleSources(preset).map(source => `RULE-SET,${ruleSourceURL(source)},${source.policy}`);
+  return ruleSources(preset).map(source => `RULE-SET,${ruleSourceURL(source)},${source.policy},update-interval=86400`);
 }
 
 function surgeLike(nodes: ProxyNode[], preset: RulePreset, customText: string, shadowrocket: boolean): string {
   const targetName = shadowrocket ? "Shadowrocket" : "Surge";
   return [
-    `# 由「流转」在本机为 ${targetName} 生成`, "# ACL4SSR 公开规则由客户端直接更新", "", "[General]", "loglevel = notify", "ipv6 = true", "dns-server = 223.5.5.5, 119.29.29.29", "skip-proxy = 127.0.0.1, localhost, *.local",
+    `# 由「流转」在本机为 ${targetName} 生成`, "# ACL4SSR 公开规则由客户端直接更新", "", "[General]", "loglevel = notify", "ipv6 = true", "dns-server = 223.5.5.5, 119.29.29.29", "encrypted-dns-server = https://223.5.5.5/dns-query, https://doh.pub/dns-query", `proxy-test-url = ${TEST_URL}`, "skip-proxy = 127.0.0.1, localhost, *.local",
     ...wireGuardSections(nodes), "", "[Proxy]", ...nodes.map((node, index) => textNode(node, shadowrocket, index)), "", "[Proxy Group]", ...textGroups(buildGroups(nodes, preset)), "", "[Rule]",
     ...remoteRuleLines(preset), ...customRuleLines(customText), "GEOIP,CN,DIRECT,no-resolve", `FINAL,${POLICIES.final}`, "",
   ].join("\n");
@@ -384,12 +387,15 @@ function generateWithRules(inputNodes: ProxyNode[], target: ClientTarget, preset
   let content: string;
   if (target === "clash") content = clash(supported, preset, customText);
   else if (target === "surge") content = surgeLike(supported, preset, customText, false);
-  else if (target === "shadowrocket") content = surgeLike(supported, preset, customText, true);
+  // Shadowrocket imports standard Clash YAML as a full configuration. A
+  // Surge-style .conf may import nodes but does not reliably expose its policy
+  // groups in Shadowrocket's UI.
+  else if (target === "shadowrocket") content = clash(supported, preset, customText);
   else if (target === "loon") content = loon(supported, preset, customText);
   else if (target === "quanx") content = quanX(supported, preset, resolvedRules);
   else if (target === "hiddify") content = hiddify(supported, preset, resolvedRules);
   else content = egern(supported, preset, resolvedRules);
-  const extension: GeneratedConfig["extension"] = target === "clash" || target === "egern" ? "yaml" : target === "hiddify" ? "json" : "conf";
+  const extension: GeneratedConfig["extension"] = target === "clash" || target === "shadowrocket" || target === "egern" ? "yaml" : target === "hiddify" ? "json" : "conf";
   return {
     content,
     extension,

@@ -22,6 +22,11 @@ function vmessLink() {
   return `vmess://${Buffer.from(value).toString("base64")}`;
 }
 
+function vmessTCPLink() {
+  const value = JSON.stringify({ v: "2", ps: "Synthetic VMess", add: "us.example.com", port: "443", id: "22222222-2222-2222-2222-222222222222", aid: "0", net: "tcp", host: "", path: "", tls: "", sni: "" });
+  return `vmess://${Buffer.from(value).toString("base64")}`;
+}
+
 function ssrLink() {
   const remarks = Buffer.from("SSR Netherlands").toString("base64url");
   const password = Buffer.from("ssr-secret").toString("base64url");
@@ -88,6 +93,36 @@ test("seven clients expose honest compatibility counts", () => {
     assert.equal(generated.skipped, 12 - count, target);
     assert.ok(generated.content.length > 100, target);
   }
+});
+
+test("Shadowrocket receives Clash YAML with visible ACL policy groups", () => {
+  const generated = generateConfig(parseSubscription(allLinks.join("\n")).nodes, "shadowrocket", "heavy");
+  assert.equal(generated.extension, "yaml");
+  const parsed = yaml.load(generated.content.replace(/^#.*\n#.*\n\n/, "")) as Record<string, unknown>;
+  assert.equal((parsed.proxies as unknown[]).length, 12);
+  const groups = parsed["proxy-groups"] as Array<{ name: string; proxies: string[] }>;
+  assert.ok(groups.length > 10);
+  assert.ok(groups.some(group => group.name === "🤖 AI 服务"));
+  assert.ok(groups.some(group => group.name === "🚀 节点选择"));
+  assert.ok(Array.isArray(parsed.rules));
+});
+
+test("Surge 5 profile uses documented testing and remote-rule parameters", () => {
+  const realShape = [
+    vmessTCPLink(),
+    "trojan://synthetic-secret@trojan.invalid:443?sni=trojan.invalid#Synthetic%20Trojan",
+    "vless://11111111-1111-1111-1111-111111111111@192.0.2.55:443?security=none&type=tcp#Unsupported%20VLESS",
+  ].join("\n");
+  const generated = generateConfig(parseSubscription(realShape).nodes, "surge", "full");
+  assert.equal(generated.supported, 2);
+  assert.equal(generated.skipped, 1);
+  assert.match(generated.content, /proxy-test-url = http:\/\/www\.gstatic\.com\/generate_204/);
+  assert.match(generated.content, /encrypted-dns-server = https:\/\/223\.5\.5\.5\/dns-query, https:\/\/doh\.pub\/dns-query/);
+  assert.match(generated.content, / = url-test, .+url=http:\/\/www\.gstatic\.com\/generate_204/);
+  assert.match(generated.content, /RULE-SET,https:\/\/raw\.githubusercontent\.com\/.+,update-interval=86400/);
+  assert.match(generated.content, / = vmess, us\.example\.com, 443, username=.+vmess-aead=true/);
+  assert.match(generated.content, / = trojan, trojan\.invalid, 443, password=synthetic-secret, sni=trojan\.invalid/);
+  assert.doesNotMatch(generated.content, /Unsupported VLESS/);
 });
 
 test("inline-rule clients resolve public rules without sending node data", async () => {
