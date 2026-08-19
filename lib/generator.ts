@@ -3,6 +3,30 @@ import type { ClientTarget, GeneratedConfig, ProxyNode, RulePreset } from "./mod
 
 const GROUP = "🚀 节点选择";
 const AUTO = "♻️ 自动选择";
+const AI_GROUP = "🤖 AI 服务";
+const AI_AUTO = "⚡ AI 日新自动";
+const ACL_BASE = "https://raw.githubusercontent.com/ACL4SSR/ACL4SSR/master/Clash";
+
+const ACL_RULESETS = [
+  { id: "LocalAreaNetwork", file: "LocalAreaNetwork.list", policy: "DIRECT" },
+  { id: "UnBan", file: "UnBan.list", policy: "DIRECT" },
+  { id: "BanAD", file: "BanAD.list", policy: "REJECT" },
+  { id: "BanProgramAD", file: "BanProgramAD.list", policy: "REJECT" },
+  { id: "AI", file: "Ruleset/AI.list", policy: AI_GROUP },
+  { id: "GoogleCN", file: "GoogleCN.list", policy: "DIRECT" },
+  { id: "SteamCN", file: "Ruleset/SteamCN.list", policy: "DIRECT" },
+  { id: "Download", file: "Download.list", policy: "DIRECT" },
+  { id: "ProxyLite", file: "ProxyLite.list", policy: GROUP },
+  { id: "ChinaDomain", file: "ChinaDomain.list", policy: "DIRECT" },
+  { id: "ChinaCompanyIp", file: "ChinaCompanyIp.list", policy: "DIRECT" },
+] as const;
+
+const AI_EXTRA_RULES = [
+  "DOMAIN-SUFFIX,grok.com",
+  "DOMAIN-SUFFIX,api.x.ai",
+  "DOMAIN-SUFFIX,githubcopilot.com",
+  "DOMAIN-SUFFIX,poe.com",
+] as const;
 
 function safeName(value: string): string {
   return value.replace(/[\r\n]+/g, " ").replace(/=/g, "-").replace(/,/g, "，").replace(/#/g, "＃").replace(/;/g, "；").replace(/\[/g, "［").replace(/\]/g, "］").trim();
@@ -21,6 +45,48 @@ function uniqueNames(nodes: ProxyNode[]): ProxyNode[] {
     counts.set(base, count);
     return { ...node, name: count === 1 ? base : `${base} · ${count}` };
   });
+}
+
+function aiEligible(node: ProxyNode): boolean {
+  const name = node.name.normalize("NFKC");
+  const excluded = /(香港|hong\s*kong|hongkong|\bhk\b|🇭🇰|澳门|澳門|macao|macau|\bmo\b|🇲🇴)/i;
+  if (excluded.test(name)) return false;
+  return /(新加坡|狮城|獅城|singapore|\bsg\b|🇸🇬|日本|东京|東京|大阪|japan|tokyo|osaka|\bjp\b|🇯🇵)/i.test(name);
+}
+
+function proxyGroups(nodes: ProxyNode[]): Array<Record<string, unknown>> {
+  const names = nodes.map(node => node.name);
+  const aiNames = nodes.filter(aiEligible).map(node => node.name);
+  const groups: Array<Record<string, unknown>> = [
+    { name: GROUP, type: "select", proxies: [AUTO, ...names, "DIRECT"] },
+    { name: AUTO, type: "url-test", url: "https://www.gstatic.com/generate_204", interval: 300, tolerance: 50, proxies: names },
+    { name: AI_GROUP, type: "select", proxies: aiNames.length ? [AI_AUTO, ...aiNames] : ["REJECT"] },
+  ];
+  if (aiNames.length) groups.push({ name: AI_AUTO, type: "url-test", url: "https://www.gstatic.com/generate_204", interval: 300, tolerance: 50, proxies: aiNames });
+  return groups;
+}
+
+function activeRuleSets(preset: RulePreset) {
+  return preset === "global" ? ACL_RULESETS.filter(rule => rule.id === "AI") : ACL_RULESETS;
+}
+
+function clashRuleProviders(preset: RulePreset): Record<string, unknown> {
+  return Object.fromEntries(activeRuleSets(preset).map(rule => [`ACL4SSR-${rule.id}`, {
+    type: "http",
+    behavior: "classical",
+    format: "text",
+    url: `${ACL_BASE}/${rule.file}`,
+    path: `./ruleset/acl4ssr-${rule.id.toLowerCase()}.list`,
+    interval: 86400,
+  }]));
+}
+
+function clashRules(preset: RulePreset): string[] {
+  const ai = [...AI_EXTRA_RULES.map(rule => `${rule},${AI_GROUP}`), `RULE-SET,ACL4SSR-AI,${AI_GROUP}`];
+  if (preset === "global") return [...ai, `MATCH,${GROUP}`];
+  const beforeAI = ACL_RULESETS.slice(0, 4).map(rule => `RULE-SET,ACL4SSR-${rule.id},${rule.policy}`);
+  const afterAI = ACL_RULESETS.slice(5).map(rule => `RULE-SET,ACL4SSR-${rule.id},${rule.policy}`);
+  return [...beforeAI, ...ai, ...afterAI, "GEOIP,CN,DIRECT,no-resolve", `MATCH,${GROUP}`];
 }
 
 function clashProxy(node: ProxyNode): Record<string, unknown> {
@@ -85,21 +151,7 @@ function clashProxy(node: ProxyNode): Record<string, unknown> {
   return proxy;
 }
 
-function rules(preset: RulePreset): string[] {
-  if (preset === "global") return [`MATCH,${GROUP}`];
-  return [
-    "DOMAIN-SUFFIX,local,DIRECT",
-    "IP-CIDR,127.0.0.0/8,DIRECT,no-resolve",
-    "IP-CIDR,10.0.0.0/8,DIRECT,no-resolve",
-    "IP-CIDR,172.16.0.0/12,DIRECT,no-resolve",
-    "IP-CIDR,192.168.0.0/16,DIRECT,no-resolve",
-    "GEOIP,CN,DIRECT,no-resolve",
-    `MATCH,${GROUP}`,
-  ];
-}
-
 function clash(nodes: ProxyNode[], preset: RulePreset, target: ClientTarget): string {
-  const names = nodes.map(node => node.name);
   const document = {
     "mixed-port": 7890,
     "allow-lan": false,
@@ -107,14 +159,12 @@ function clash(nodes: ProxyNode[], preset: RulePreset, target: ClientTarget): st
     "log-level": "warning",
     ipv6: true,
     proxies: nodes.map(clashProxy),
-    "proxy-groups": [
-      { name: GROUP, type: "select", proxies: [AUTO, ...names, "DIRECT"] },
-      { name: AUTO, type: "url-test", url: "https://www.gstatic.com/generate_204", interval: 300, tolerance: 50, proxies: names },
-    ],
-    rules: rules(preset),
+    "proxy-groups": proxyGroups(nodes),
+    "rule-providers": clashRuleProviders(preset),
+    rules: clashRules(preset),
   };
   const client = target === "shadowrocket" ? "Shadowrocket" : "Clash / Stash";
-  return `# 由「流转」在本机为 ${client} 生成\n# 订阅凭据未上传到任何转换服务\n\n${yaml.dump(document, { noRefs: true, lineWidth: -1 })}`;
+  return `# 由「流转」在本机为 ${client} 生成\n# 订阅凭据未上传；客户端仅下载 ACL4SSR 的公开规则列表\n\n${yaml.dump(document, { noRefs: true, lineWidth: -1 })}`;
 }
 
 function confValue(value: string): string {
@@ -156,12 +206,31 @@ function surgeNode(node: ProxyNode): string {
   return `${name} = ${values.join(", ")}`;
 }
 
-function surge(nodes: ProxyNode[], preset: RulePreset): string {
+function surgeRuleLines(preset: RulePreset): string[] {
+  const ai = [...AI_EXTRA_RULES.map(rule => `${rule},${AI_GROUP}`), `RULE-SET,${ACL_BASE}/Ruleset/AI.list,${AI_GROUP}`];
+  if (preset === "global") return [...ai, `FINAL,${GROUP}`];
+  const beforeAI = ACL_RULESETS.slice(0, 4).map(rule => `RULE-SET,${ACL_BASE}/${rule.file},${rule.policy}`);
+  const afterAI = ACL_RULESETS.slice(5).map(rule => `RULE-SET,${ACL_BASE}/${rule.file},${rule.policy}`);
+  return [...beforeAI, ...ai, ...afterAI, "GEOIP,CN,DIRECT,no-resolve", `FINAL,${GROUP}`];
+}
+
+function textProxyGroups(nodes: ProxyNode[], compact = false): string[] {
+  const separator = compact ? "," : ", ";
   const names = nodes.map(node => safeName(node.name));
-  const ruleLines = rules(preset).map(rule => rule.replace(/^MATCH,/, "FINAL,"));
+  const aiNames = nodes.filter(aiEligible).map(node => safeName(node.name));
+  const lines = [
+    `${GROUP} = select${separator}${[AUTO, ...names, "DIRECT"].join(separator)}`,
+    `${AUTO} = url-test${separator}${names.join(separator)}${separator}url=https://www.gstatic.com/generate_204${separator}interval=300${separator}tolerance=50`,
+    `${AI_GROUP} = select${separator}${(aiNames.length ? [AI_AUTO, ...aiNames] : ["REJECT"]).join(separator)}`,
+  ];
+  if (aiNames.length) lines.push(`${AI_AUTO} = url-test${separator}${aiNames.join(separator)}${separator}url=https://www.gstatic.com/generate_204${separator}interval=300${separator}tolerance=50`);
+  return lines;
+}
+
+function surge(nodes: ProxyNode[], preset: RulePreset): string {
   return [
     "# 由「流转」在本机为 Surge 生成",
-    "# 订阅凭据未上传到任何转换服务",
+    "# 订阅凭据未上传；客户端仅下载 ACL4SSR 的公开规则列表",
     "",
     "[General]",
     "loglevel = notify",
@@ -173,11 +242,10 @@ function surge(nodes: ProxyNode[], preset: RulePreset): string {
     ...nodes.map(surgeNode),
     "",
     "[Proxy Group]",
-    `${GROUP} = select, ${AUTO}, ${names.join(", ")}, DIRECT`,
-    `${AUTO} = url-test, ${names.join(", ")}, url=https://www.gstatic.com/generate_204, interval=300, tolerance=50`,
+    ...textProxyGroups(nodes),
     "",
     "[Rule]",
-    ...ruleLines,
+    ...surgeRuleLines(preset),
     "",
   ].join("\n");
 }
@@ -221,12 +289,21 @@ function loonNode(node: ProxyNode): string {
   return `${name} = ${values.join(", ")}`;
 }
 
+function loonLocalRules(preset: RulePreset): string[] {
+  const ai = AI_EXTRA_RULES.map(rule => `${rule},${AI_GROUP}`);
+  return preset === "global"
+    ? [...ai, `FINAL,${GROUP}`]
+    : [...ai, "GEOIP,CN,DIRECT,no-resolve", `FINAL,${GROUP}`];
+}
+
+function loonRemoteRules(preset: RulePreset): string[] {
+  return activeRuleSets(preset).map(rule => `${ACL_BASE}/${rule.file},policy=${rule.policy},tag=ACL4SSR-${rule.id},enabled=true`);
+}
+
 function loon(nodes: ProxyNode[], preset: RulePreset): string {
-  const names = nodes.map(node => safeName(node.name));
-  const ruleLines = rules(preset).map(rule => rule.replace(/^MATCH,/, "FINAL,"));
   return [
     "# 由「流转」在本机为 Loon 生成",
-    "# 订阅凭据未上传到任何转换服务",
+    "# 订阅凭据未上传；客户端仅下载 ACL4SSR 的公开规则列表",
     "",
     "[General]",
     "ipv6 = true",
@@ -236,11 +313,13 @@ function loon(nodes: ProxyNode[], preset: RulePreset): string {
     ...nodes.map(loonNode),
     "",
     "[Proxy Group]",
-    `${GROUP} = select,${AUTO},${names.join(",")},DIRECT`,
-    `${AUTO} = url-test,${names.join(",")},url=https://www.gstatic.com/generate_204,interval=300,tolerance=50`,
+    ...textProxyGroups(nodes, true),
+    "",
+    "[Remote Rule]",
+    ...loonRemoteRules(preset),
     "",
     "[Rule]",
-    ...ruleLines,
+    ...loonLocalRules(preset),
     "",
   ].join("\n");
 }
@@ -280,5 +359,6 @@ export function generateConfig(inputNodes: ProxyNode[], target: ClientTarget, pr
     extension: target === "clash" || target === "shadowrocket" ? "yaml" : "conf",
     supported: supported.length,
     skipped: all.length - supported.length,
+    aiEligible: supported.filter(aiEligible).length,
   };
 }

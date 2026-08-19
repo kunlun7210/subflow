@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { generateConfig } from "../lib/generator";
 import { parseSubscription } from "../lib/parser";
+import { isHttpSubscriptionURL, loadSubscriptionInput, SubscriptionLoadError } from "../lib/source";
 import type { ClientTarget, ProxyNode, RulePreset } from "../lib/model";
 
 const targets: Array<{ id: ClientTarget; name: string; note: string; letter: string }> = [
@@ -16,10 +17,6 @@ const protocolLabels: Record<ProxyNode["protocol"], string> = {
   ss: "Shadowsocks", vmess: "VMess", vless: "VLESS", trojan: "Trojan", hysteria2: "Hysteria 2",
 };
 
-function looksLikeURL(value: string): boolean {
-  return /^https?:\/\/\S+$/i.test(value.trim());
-}
-
 export default function Home() {
   const [source, setSource] = useState("");
   const [nodes, setNodes] = useState<ProxyNode[]>([]);
@@ -29,6 +26,7 @@ export default function Home() {
   const [target, setTarget] = useState<ClientTarget>("clash");
   const [preset, setPreset] = useState<RulePreset>("balanced");
   const [copied, setCopied] = useState(false);
+  const [rawFallback, setRawFallback] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -54,31 +52,35 @@ export default function Home() {
     else setError("");
   }
 
-  async function importSource() {
-    const value = source.trim();
+  async function processSource(input: string) {
+    const value = input.trim();
     if (!value) { setError("请先粘贴订阅链接或订阅内容。"); return; }
-    setBusy(true); setError(""); setWarnings([]);
+    setBusy(true); setError(""); setWarnings([]); setRawFallback(false);
     try {
-      if (looksLikeURL(value)) {
-        const response = await fetch(value, { cache: "no-store", credentials: "omit", referrerPolicy: "no-referrer" });
-        if (!response.ok) throw new Error(`订阅服务器返回 ${response.status}`);
-        const text = await response.text();
-        if (text.length > 5_000_000) throw new Error("订阅内容超过 5 MB，为避免手机内存不足已停止读取");
-        parse(text);
-      } else {
-        parse(value);
-      }
+      const loaded = await loadSubscriptionInput(value);
+      parse(loaded.text);
     } catch (reason) {
-      const message = reason instanceof Error ? reason.message : "无法读取订阅";
-      setError(`${message}。如果这是浏览器的跨域限制，请改用“粘贴内容”或“选择文件”；流转不会把链接转发给代理服务器。`);
+      if (reason instanceof SubscriptionLoadError) {
+        setRawFallback(isHttpSubscriptionURL(value));
+        const detail = reason.ipHost && reason.code === "network"
+          ? "已识别为 IP 地址订阅链接，但 Safari 无法读取。常见原因是 HTTPS 证书不匹配或服务器未允许跨域访问（CORS）。"
+          : `${reason.message}。`;
+        setError(`${detail} 出于隐私考虑，流转不会把链接转发给第三方中转站。可打开原始订阅后复制 Base64/节点原文，或保存成文件再导入。`);
+      } else {
+        setError("无法读取订阅。请确认内容格式后重试。");
+      }
     } finally { setBusy(false); }
+  }
+
+  async function importSource() {
+    await processSource(source);
   }
 
   async function pasteContent() {
     try {
       const text = await navigator.clipboard.readText();
       setSource(text);
-      if (text.trim()) parse(text);
+      if (text.trim()) await processSource(text);
     } catch { setError("Safari 没有授予剪贴板权限，请长按输入框后粘贴。"); }
   }
 
@@ -112,7 +114,7 @@ export default function Home() {
   }
 
   function reset() {
-    setSource(""); setNodes([]); setWarnings([]); setError(""); setCopied(false);
+    setSource(""); setNodes([]); setWarnings([]); setError(""); setCopied(false); setRawFallback(false);
   }
 
   const activeStep = generated ? 3 : nodes.length ? 2 : 1;
@@ -127,7 +129,7 @@ export default function Home() {
       <section className="hero" id="top">
         <p className="eyebrow">PRIVATE SUBSCRIPTION TOOL</p>
         <h1>流转：本地订阅转换</h1>
-        <p className="hero-copy">不上传节点，不经过第三方转换站。iPhone 与 Mac 打开同一个页面，就能完成解析和导出。</p>
+        <p className="hero-copy">不上传节点，不经过第三方转换站。</p>
       </section>
 
       <section className="workspace" aria-label="订阅转换工作区">
@@ -145,11 +147,11 @@ export default function Home() {
             <button type="button" onClick={importSource} disabled={busy}>{busy ? "正在读取…" : "读取订阅"}<span>→</span></button>
           </div>
           <div className="import-alternatives">
-            <button type="button" onClick={pasteContent}>粘贴订阅内容</button><span>或</span>
+            <button type="button" onClick={pasteContent}>粘贴并识别</button><span>或</span>
             <button type="button" onClick={() => fileRef.current?.click()}>选择本地文件</button>
             <input ref={fileRef} className="hidden-file" type="file" accept=".txt,.yaml,.yml,.conf,text/plain,text/yaml" onChange={event => chooseFile(event.target.files?.[0])} />
           </div>
-          {error && <div className="message error" role="alert"><b>读取未完成</b><span>{error}</span></div>}
+          {error && <div className="message error" role="alert"><b>读取未完成</b><span>{error}{rawFallback && <button type="button" onClick={() => window.open(source.trim(), "_blank", "noopener,noreferrer")}>打开原始订阅 ↗</button>}</span></div>}
           {warnings.length > 0 && nodes.length > 0 && <div className="message warning"><b>已安全跳过</b><span>{warnings.join(" ")}</span></div>}
         </section>
 
@@ -175,14 +177,15 @@ export default function Home() {
               <span className={`target-icon icon-${index}`}>{item.letter}</span><span><strong>{item.name}</strong><small>{item.note}</small></span><i aria-hidden="true" />
             </button>)}</div>
             <div className="rule-selector">
-              <div><strong>分流规则</strong><small>首版内置轻量规则，不依赖远程规则服务</small></div>
-              <div role="group" aria-label="分流规则"><button className={preset === "balanced" ? "active" : ""} onClick={() => setPreset("balanced")}>基础分流</button><button className={preset === "global" ? "active" : ""} onClick={() => setPreset("global")}>全局代理</button></div>
+              <div><strong>分流规则</strong><small>ACL4SSR 在线规则；AI 仅自动选择新加坡或日本节点</small></div>
+              <div role="group" aria-label="分流规则"><button className={preset === "balanced" ? "active" : ""} onClick={() => setPreset("balanced")}>ACL4SSR + AI</button><button className={preset === "global" ? "active" : ""} onClick={() => setPreset("global")}>全局代理 + AI</button></div>
             </div>
           </section>
 
           {generated && <section className="export-card">
-            <div className="export-heading"><div><p>READY TO EXPORT</p><h2>配置已在本机生成</h2><span>{generated.supported} 个写入 · {generated.skipped} 个因客户端不兼容而跳过</span></div><div className="export-actions"><button className="secondary" type="button" onClick={copyConfiguration}>{copied ? "已复制 ✓" : "复制配置"}</button><button className="primary" type="button" onClick={downloadConfiguration}>下载文件 <span>↓</span></button></div></div>
+            <div className="export-heading"><div><p>READY TO EXPORT</p><h2>配置已在本机生成</h2><span>{generated.supported} 个写入 · {generated.skipped} 个因客户端不兼容而跳过 · AI 可用日/新节点 {generated.aiEligible} 个</span></div><div className="export-actions"><button className="secondary" type="button" onClick={copyConfiguration}>{copied ? "已复制 ✓" : "复制配置"}</button><button className="primary" type="button" onClick={downloadConfiguration}>下载文件 <span>↓</span></button></div></div>
             {generated.skipped > 0 && <div className="compat-note">为避免生成“看似正常但无法连接”的配置，不受目标客户端支持的协议或传输已明确跳过。</div>}
+            {generated.aiEligible === 0 && <div className="compat-note">没有发现名称明确标注为新加坡或日本的节点；AI 分组已设为 REJECT，不会回落到直连、香港或澳门。</div>}
             <details className="preview"><summary>查看配置预览</summary><pre>{generated.content}</pre></details>
           </section>}
         </>}

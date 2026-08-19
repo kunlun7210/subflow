@@ -42,4 +42,5 @@ export interface GeneratedConfig {
   extension: "yaml" | "conf";
   supported: number;
   skipped: number;
+  aiEligible: number;
 }

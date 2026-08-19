@@ -19,7 +19,7 @@ Clash / Stash / Surge / Shadowrocket / Loon
 - 同一份代码维护四台设备，不需要 App Store、证书或重复开发两套原生 UI。
 - 首次加载后，解析与生成引擎可以离线运行。
 
-网页的限制是 CORS：有些机场不允许浏览器直接读取跨域订阅。流转不会用代理服务器绕过它；遇到这种情况，请复制订阅内容后粘贴，或上传本地 `.txt` / `.yaml` 文件。
+网页的限制是 CORS 与 HTTPS 证书：有些订阅服务器（尤其是直接使用 IP 地址的链接）不允许浏览器跨域读取，或证书只对域名有效。流转能够识别 IP 地址链接，但不会用第三方中转站绕过浏览器安全限制。遇到这种情况，可用页面提供的“打开原始订阅”复制 Base64/节点原文，或保存后导入本地 `.txt` / `.yaml` 文件。
 
 ## 首版能力
 
@@ -36,10 +36,12 @@ Clash / Stash / Surge / Shadowrocket / Loon
 - Surge 完整配置
 - Shadowrocket 可导入的 Clash YAML
 - Loon 完整配置
-- 基础分流或全局代理
+- ACL4SSR 在线规则或全局代理
+- 独立 AI 分组：覆盖 ChatGPT/OpenAI、Gemini、Claude、xAI/Grok、Copilot、Perplexity 等服务
+- AI 自动选择只纳入名称明确标注为新加坡或日本的节点；没有合格节点时使用 `REJECT`，不会回落到直连、香港或澳门
 - 复制与下载
 
-生成器会明确统计目标客户端不兼容而跳过的节点。例如 Surge 不支持 VLESS，流转不会生成一条“看起来能导入但实际不能连接”的假配置。
+生成器会明确统计目标客户端不兼容而跳过的节点。例如 Surge 不支持 VLESS，流转不会生成一条“看起来能导入但实际不能连接”的假配置。生成的客户端配置会下载 ACL4SSR 的公开规则列表；订阅地址与节点凭据不会随规则请求发送。
 
 ## 本地运行
 
@@ -82,13 +84,13 @@ npm run build:pages
 
 ## 参考与许可证
 
-架构参考 [pengchujin/tower](https://github.com/pengchujin/tower) 的本地优先设计、统一节点模型和“无法忠实表达就跳过”的兼容策略。流转是独立的 TypeScript/PWA 实现，没有复制 Tower 的 SwiftUI 界面。
+架构参考 [pengchujin/tower](https://github.com/pengchujin/tower) 的本地优先设计、统一节点模型和“无法忠实表达就跳过”的兼容策略。流转是独立的 TypeScript/PWA 实现，没有复制 Tower 的 SwiftUI 界面。分流使用 [ACL4SSR/ACL4SSR](https://github.com/ACL4SSR/ACL4SSR) 的公开在线规则，不在本仓库复制规则正文。
 
 本项目使用 MIT License。第三方依赖与参考项目的许可证见 `THIRD-PARTY-NOTICES.md`。
 
 ## 已知边界
 
-- 首版没有 ACL4SSR 全量规则、测速、地图、订阅管理或多订阅合并。
+- 当前没有地图、订阅管理或多订阅合并。
 - 非标准机场字段可能需要按真实样本增加兼容适配。
 - 尚未在安装了所有目标客户端的真机上完成最终导入验收；格式生成和兼容跳过已有自动测试。
 - 使用前应查看配置预览，并保留原客户端配置备份。
