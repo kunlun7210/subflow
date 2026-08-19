@@ -4,6 +4,7 @@ import * as yaml from "js-yaml";
 import { configurationFilename, formatDownloadDate } from "../lib/filename.ts";
 import { generateConfig, generateConfigAsync } from "../lib/generator.ts";
 import { parseSubscription } from "../lib/parser.ts";
+import { PRESET_META } from "../lib/rules.ts";
 import { isHttpSubscriptionURL, isIpSubscriptionURL, loadSubscriptionInput, SubscriptionLoadError } from "../lib/source.ts";
 
 const ss = "ss://YWVzLTI1Ni1nY206cGFzc3dvcmQ=@hk.example.com:8388#Hong%20Kong";
@@ -63,9 +64,13 @@ test("generates Clash with 12 nodes, regional groups, and ACL4SSR default AI cho
   assert.deepEqual(ai?.proxies, ["🚀 节点选择", "♻️ 自动选择", "🇸🇬 狮城节点", "🇭🇰 香港节点", "🇹🇼 台湾节点", "🇯🇵 日本节点", "🇺🇸 美国节点", "🇰🇷 韩国节点", "🚀 手动切换", "DIRECT"]);
   assert.doesNotMatch(JSON.stringify(groups), /AI 日新自动/);
   assert.match(generated.content, /Ruleset\/AI\.list/);
+  const regionNames = groups.filter(group => /节点$/.test(group.name)).map(group => group.name);
+  assert.deepEqual(groups.slice(-regionNames.length).map(group => group.name), regionNames);
+  assert.ok(groups.findIndex(group => group.name === "🐟 漏网之鱼") < groups.findIndex(group => /节点$/.test(group.name)));
 });
 
 test("custom Full preset omits requested groups while keeping SteamCN", () => {
+  assert.equal(PRESET_META.full.description, "完整分流，定制版");
   const content = generateConfig(parseSubscription([ss, trojan].join("\n")).nodes, "clash", "full").content;
   for (const removed of ["Bing.list", "OneDrive.list", "Microsoft.list", "NetEaseMusic.list", "Epic.list", "Origin.list", "Sony.list", "Steam.list", "Nintendo.list", "Netflix.list", "Bahamut.list"]) assert.doesNotMatch(content, new RegExp(`/${removed.replace(".", "\\.")}`));
   for (const group of ["微软Bing", "微软云盘", "微软服务", "网易音乐", "游戏平台", "巴哈姆特", "奈飞视频"]) assert.doesNotMatch(content, new RegExp(group));
@@ -116,13 +121,22 @@ test("Surge 5 profile uses documented testing and remote-rule parameters", () =>
   const generated = generateConfig(parseSubscription(realShape).nodes, "surge", "full");
   assert.equal(generated.supported, 2);
   assert.equal(generated.skipped, 1);
-  assert.match(generated.content, /proxy-test-url = http:\/\/www\.gstatic\.com\/generate_204/);
-  assert.match(generated.content, /encrypted-dns-server = https:\/\/223\.5\.5\.5\/dns-query, https:\/\/doh\.pub\/dns-query/);
-  assert.match(generated.content, / = url-test, .+url=http:\/\/www\.gstatic\.com\/generate_204/);
+  assert.match(generated.content, /proxy-test-url = http:\/\/cp\.cloudflare\.com\/generate_204/);
+  assert.doesNotMatch(generated.content, /encrypted-dns-server/);
+  assert.match(generated.content, / = url-test, .+url=http:\/\/cp\.cloudflare\.com\/generate_204/);
   assert.match(generated.content, /RULE-SET,https:\/\/raw\.githubusercontent\.com\/.+,update-interval=86400/);
-  assert.match(generated.content, / = vmess, us\.example\.com, 443, username=.+vmess-aead=true/);
-  assert.match(generated.content, / = trojan, trojan\.invalid, 443, password=synthetic-secret, sni=trojan\.invalid/);
+  assert.match(generated.content, / = vmess, us\.example\.com, 443, username=.+vmess-aead=true, tls=false, skip-cert-verify=false, tfo=false, udp-relay=false/);
+  assert.match(generated.content, / = trojan, trojan\.invalid, 443, password=synthetic-secret, sni=trojan\.invalid, skip-cert-verify=false, tfo=false, udp-relay=false/);
   assert.doesNotMatch(generated.content, /Unsupported VLESS/);
+});
+
+test("Surge preserves Hysteria 2 certificate and bandwidth settings", () => {
+  const explicit = parseSubscription("hy2://secret@hy2.invalid:443?sni=hy2.invalid&skip-cert-verify=false&download-bandwidth=5000#Synthetic%20HY2").nodes;
+  const generated = generateConfig(explicit, "surge", "mini");
+  assert.match(generated.content, / = hysteria2, hy2\.invalid, 443, password=secret, sni=hy2\.invalid, skip-cert-verify=false, download-bandwidth=5000, udp-relay=true/);
+
+  const compatibleDefault = parseSubscription("hy2://secret@hy2.invalid:443?sni=hy2.invalid#Synthetic%20HY2").nodes;
+  assert.match(generateConfig(compatibleDefault, "surge", "mini").content, /skip-cert-verify=true, download-bandwidth=1000, udp-relay=true/);
 });
 
 test("inline-rule clients resolve public rules without sending node data", async () => {

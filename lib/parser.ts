@@ -178,6 +178,7 @@ function parseStandard(raw: string, protocol: "vless" | "trojan"): ProxyNode | n
     const credential = safeDecode(url.username);
     if (!server || !port || !credential) return null;
     const query = url.searchParams;
+    const skipCertValue = query.get("skip-cert-verify") ?? query.get("allowInsecure") ?? query.get("allow_insecure") ?? query.get("insecure");
     const security = (query.get("security") || query.get("tls") || "").toLowerCase();
     const transport = (query.get("type") || query.get("network") || "tcp").toLowerCase();
     const realityPublicKey = query.get("pbk") || query.get("public-key") || undefined;
@@ -198,7 +199,7 @@ function parseStandard(raw: string, protocol: "vless" | "trojan"): ProxyNode | n
       fingerprint: query.get("fp") || query.get("fingerprint") || undefined,
       realityPublicKey,
       realityShortId: query.get("sid") || undefined,
-      skipCertVerify: ["1", "true"].includes((query.get("allowInsecure") || query.get("insecure") || "").toLowerCase()),
+      skipCertVerify: skipCertValue === null ? undefined : ["1", "true"].includes(skipCertValue.toLowerCase()),
     };
   } catch { return null; }
 }
@@ -316,6 +317,7 @@ function parseHysteria2(raw: string): ProxyNode | null {
     const password = safeDecode(url.username);
     if (!server || !port || !password) return null;
     const query = url.searchParams;
+    const skipCertValue = query.get("skip-cert-verify") ?? query.get("allowInsecure") ?? query.get("allow_insecure") ?? query.get("insecure");
     return {
       protocol: "hysteria2",
       name: normalizedName(safeDecode(url.hash.slice(1)), `Hysteria 2 · ${server}`),
@@ -326,11 +328,13 @@ function parseHysteria2(raw: string): ProxyNode | null {
       tls: true,
       sni: query.get("sni") || query.get("servername") || query.get("peer") || undefined,
       alpn: query.get("alpn") || undefined,
-      skipCertVerify: ["1", "true"].includes((query.get("allowInsecure") || query.get("allow_insecure") || query.get("insecure") || "").toLowerCase()),
+      skipCertVerify: skipCertValue === null ? undefined : ["1", "true"].includes(skipCertValue.toLowerCase()),
       obfs: query.get("obfs") || undefined,
       obfsPassword: query.get("obfs-password") || query.get("obfspassword") || query.get("obfs_password") || undefined,
       portHopping: query.get("mport") || query.get("ports") || query.get("server-ports") || query.get("port-hopping") || undefined,
       certificateFingerprint: query.get("fingerprint") || undefined,
+      upMbps: positiveNumber(query.get("upmbps") || query.get("up") || query.get("upload-bandwidth") || query.get("upload_bandwidth")),
+      downMbps: positiveNumber(query.get("downmbps") || query.get("down") || query.get("download-bandwidth") || query.get("download_bandwidth")),
     };
   } catch { return null; }
 }

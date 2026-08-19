@@ -131,7 +131,7 @@ const mini: RuleSource[] = [
 ];
 
 export const PRESET_META: Record<RulePreset, { title: string; description: string; groups: number; sources: number }> = {
-  full: { title: "ACL4SSR 全分组 · 定制", description: "完整分流，已移除你不使用的 7 类服务组", groups: 17, sources: full.length },
+  full: { title: "ACL4SSR 全分组 · 定制", description: "完整分流，定制版", groups: 17, sources: full.length },
   balanced: { title: "ACL4SSR 默认", description: "广告、AI、媒体、苹果与国内外基础分流", groups: 11, sources: balanced.length },
   mini: { title: "ACL4SSR 精简", description: "节点选择、自动选择、直连与拦截", groups: 7, sources: mini.length },
   heavy: { title: "ACL4SSR_Online_Full 全分组", description: "完整 29 组，适合重度用户使用", groups: 29, sources: fullOriginal.length },

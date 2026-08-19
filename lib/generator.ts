@@ -9,10 +9,9 @@ interface PolicyGroup {
   members: string[];
 }
 
-// Surge's documented examples and Tower both use the plain HTTP 204 endpoint.
-// Keeping one URL across generated clients also avoids treating a TLS failure
-// at the test endpoint as if every proxy were unavailable.
-const TEST_URL = "http://www.gstatic.com/generate_204";
+// Use the plain HTTP 204 endpoint already proven by a working local Surge
+// profile, so a TLS failure at the test endpoint is not reported as a proxy failure.
+const TEST_URL = "http://cp.cloudflare.com/generate_204";
 
 function safeName(value: string): string {
   return value.replace(/[\r\n]+/g, " ").replace(/=/g, "-").replace(/,/g, "，").replace(/#/g, "＃").replace(/;/g, "；").replace(/\[/g, "［").replace(/\]/g, "］").trim();
@@ -73,8 +72,6 @@ function buildGroups(nodes: ProxyNode[], preset: RulePreset): PolicyGroup[] {
     // not force a country and may be changed by the user in the target client.
     { name: POLICIES.ai, type: "select", members: [POLICIES.main, POLICIES.auto, ...aclRegionNames, POLICIES.manual, "DIRECT"] },
   ];
-  for (const group of regionGroups) groups.push({ name: group.region.name, type: "url-test", members: group.nodes.map(node => node.name) });
-
   const choices = [POLICIES.main, POLICIES.auto, ...regionNames, POLICIES.manual, "DIRECT"];
   const directFirst = ["DIRECT", POLICIES.main, POLICIES.auto, ...regionNames, POLICIES.manual];
   const sourcePolicies = new Set(ruleSources(preset).map(source => source.policy));
@@ -103,6 +100,8 @@ function buildGroups(nodes: ProxyNode[], preset: RulePreset): PolicyGroup[] {
   add(POLICIES.ad, ["REJECT", "DIRECT"]);
   add(POLICIES.cleanup, ["REJECT", "DIRECT"]);
   groups.push({ name: POLICIES.final, type: "select", members: [POLICIES.main, POLICIES.auto, "DIRECT", ...regionNames] });
+  // Country and region groups stay together at the very bottom of the policy list.
+  for (const group of regionGroups) groups.push({ name: group.region.name, type: "url-test", members: group.nodes.map(node => node.name) });
   return groups;
 }
 
@@ -196,17 +195,34 @@ function textNode(node: ProxyNode, shadowrocket: boolean, index: number): string
     fields = ["ssr", node.server, String(node.port), `encrypt-method=${node.cipher ?? "aes-256-cfb"}`, `password=${confValue(node.password ?? "")}`, `protocol=${node.protocolName ?? "origin"}`, `obfs=${node.obfs ?? "plain"}`];
     if (node.protocolParam) fields.push(`protocol-param=${confValue(node.protocolParam)}`);
     if (node.obfsParam) fields.push(`obfs-param=${confValue(node.obfsParam)}`);
-  } else if (node.protocol === "vmess") fields = ["vmess", node.server, String(node.port), `username=${node.uuid ?? ""}`, `vmess-aead=${(node.alterId ?? 0) === 0}`, ...transportOptions(node)];
+  } else if (node.protocol === "vmess") {
+    fields = ["vmess", node.server, String(node.port), `username=${node.uuid ?? ""}`, `vmess-aead=${(node.alterId ?? 0) === 0}`, ...transportOptions(node)];
+    if (!node.tls) fields.push("tls=false");
+    if (!node.skipCertVerify) fields.push("skip-cert-verify=false");
+    fields.push("tfo=false", "udp-relay=false");
+  }
   else if (node.protocol === "vless") {
     fields = ["vless", node.server, String(node.port), `username=${node.uuid ?? ""}`, ...transportOptions(node), "udp-relay=true"];
     if (node.realityPublicKey) fields.push(`pbk=${confValue(node.realityPublicKey)}`);
     if (node.realityShortId) fields.push(`sid=${confValue(node.realityShortId)}`);
-  } else if (node.protocol === "trojan") fields = ["trojan", node.server, String(node.port), `password=${confValue(node.password ?? "")}`, ...transportOptions(node).filter(value => value !== "tls=true")];
+  } else if (node.protocol === "trojan") {
+    fields = ["trojan", node.server, String(node.port), `password=${confValue(node.password ?? "")}`, ...transportOptions(node).filter(value => value !== "tls=true")];
+    if (!node.skipCertVerify) fields.push("skip-cert-verify=false");
+    fields.push("tfo=false", "udp-relay=false");
+  }
   else if (node.protocol === "hysteria") {
     fields = ["hysteria", node.server, String(node.port), `auth=${confValue(node.password ?? "")}`, `upmbps=${node.upMbps ?? 50}`, `downmbps=${node.downMbps ?? 100}`, ...tlsOptions(node, false), "udp=1"];
     if (node.obfs) fields.push(`obfsParam=${confValue(node.obfs)}`);
   } else if (node.protocol === "hysteria2") {
-    fields = ["hysteria2", node.server, String(node.port), `password=${confValue(node.password ?? "")}`, ...tlsOptions(node, false)];
+    const skipCertVerify = node.skipCertVerify ?? true;
+    fields = [
+      "hysteria2", node.server, String(node.port), `password=${confValue(node.password ?? "")}`,
+      ...(node.sni ? [`sni=${confValue(node.sni)}`] : []),
+      `skip-cert-verify=${skipCertVerify}`,
+      ...(node.alpn ? [`alpn=${confValue(node.alpn)}`] : []),
+      `download-bandwidth=${node.downMbps ?? 1000}`,
+      "udp-relay=true",
+    ];
     if (node.obfsPassword) fields.push(`${shadowrocket ? "obfsParam" : "salamander-password"}=${confValue(node.obfsPassword)}`);
   } else if (node.protocol === "tuic") fields = [shadowrocket ? "tuic" : "tuic-v5", node.server, String(node.port), `${shadowrocket ? "user" : "uuid"}=${node.uuid ?? ""}`, `password=${confValue(node.password ?? "")}`, ...tlsOptions(node, false), shadowrocket ? "udp=1" : "udp-relay=true"];
   else if (node.protocol === "wireguard") fields = ["wireguard", `section-name=subflow-wg-${index + 1}`];
@@ -240,7 +256,7 @@ function remoteRuleLines(preset: RulePreset): string[] {
 function surgeLike(nodes: ProxyNode[], preset: RulePreset, customText: string, shadowrocket: boolean): string {
   const targetName = shadowrocket ? "Shadowrocket" : "Surge";
   return [
-    `# 由「流转」在本机为 ${targetName} 生成`, "# ACL4SSR 公开规则由客户端直接更新", "", "[General]", "loglevel = notify", "ipv6 = true", "dns-server = 223.5.5.5, 119.29.29.29", "encrypted-dns-server = https://223.5.5.5/dns-query, https://doh.pub/dns-query", `proxy-test-url = ${TEST_URL}`, "skip-proxy = 127.0.0.1, localhost, *.local",
+    `# 由「流转」在本机为 ${targetName} 生成`, "# ACL4SSR 公开规则由客户端直接更新", "", "[General]", "loglevel = notify", "ipv6 = true", "dns-server = 119.29.29.29, 223.5.5.5", `proxy-test-url = ${TEST_URL}`, "test-timeout = 5", "skip-proxy = 127.0.0.1, localhost, *.local",
     ...wireGuardSections(nodes), "", "[Proxy]", ...nodes.map((node, index) => textNode(node, shadowrocket, index)), "", "[Proxy Group]", ...textGroups(buildGroups(nodes, preset)), "", "[Rule]",
     ...remoteRuleLines(preset), ...customRuleLines(customText), "GEOIP,CN,DIRECT,no-resolve", `FINAL,${POLICIES.final}`, "",
   ].join("\n");
