@@ -134,7 +134,7 @@ export default function Home() {
 
   return <main className="app-shell">
     <header className="topbar"><a className="brand" href="#top" aria-label="流转首页"><span className="brand-mark" aria-hidden="true">流</span><span>流转</span></a><div className="privacy-pill"><span />仅在此设备处理</div></header>
-    <section className="hero" id="top"><p className="eyebrow">PRIVATE SUBSCRIPTION TOOL</p><h1>本地订阅转换。</h1></section>
+    <section className="hero" id="top"><p className="eyebrow">PRIVATE SUBSCRIPTION TOOL</p><h1>本地订阅转换</h1></section>
 
     <section className="workspace" aria-label="订阅转换工作区">
       <div className="steps" aria-label="转换步骤">{["导入", "检查", "导出"].map((step, index) => <span key={step} className={`step ${activeStep >= index + 1 ? "active" : ""}`}><b>{index + 1}</b>{step}{index < 2 && <i />}</span>)}</div>
@@ -176,6 +176,6 @@ export default function Home() {
       </>}
     </section>
 
-    <section className="privacy-strip"><div className="privacy-points"><span>12 种协议</span><span>7 个客户端</span><span>ACL4SSR 规则</span></div></section>
+    <section className="privacy-strip"><div className="privacy-points"><span>12 种协议</span><span>7 种客户端</span><span>ACL4SSR 规则</span></div></section>
   </main>;
 }

@@ -2,7 +2,7 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "本地订阅转换。",
+    name: "本地订阅转换",
     short_name: "流转",
     description: "在 iPhone 与 Mac 浏览器中本地解析并转换代理订阅。",
     start_url: "./",
