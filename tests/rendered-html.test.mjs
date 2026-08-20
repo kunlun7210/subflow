@@ -15,8 +15,8 @@ test("server-renders the finished local-first converter", async () => {
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
   const html = await response.text();
-  assert.match(html, /<title>流转：本地订阅转换<\/title>/);
-  assert.match(html, /流转：本地订阅转换/);
+  assert.match(html, /<title>本地订阅转换。<\/title>/);
+  assert.match(html, /本地订阅转换。/);
   assert.match(html, /仅在此设备处理/);
   assert.match(html, /manifest\.webmanifest/);
   assert.doesNotMatch(html, /codex-preview|SkeletonPreview|react-loading-skeleton/);
