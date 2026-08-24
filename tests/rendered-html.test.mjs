@@ -19,5 +19,6 @@ test("server-renders the finished local-first converter", async () => {
   assert.match(html, /本地订阅转换/);
   assert.match(html, /仅在此设备处理/);
   assert.match(html, /manifest\.webmanifest/);
+  assert.match(html, /apple-touch-icon\.png/);
   assert.doesNotMatch(html, /codex-preview|SkeletonPreview|react-loading-skeleton/);
 });
