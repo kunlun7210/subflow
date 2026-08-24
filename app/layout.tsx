@@ -7,7 +7,7 @@ export const metadata: Metadata = {
   applicationName: "流转",
   manifest: "./manifest.webmanifest",
   appleWebApp: { capable: true, statusBarStyle: "black-translucent", title: "流转" },
-  icons: { icon: "./icon-192.png", apple: "./apple-touch-icon.png" },
+  icons: { icon: "./icon-192.png?v=2", apple: "./apple-touch-icon.png?v=2" },
 };
 
 export const viewport: Viewport = { width: "device-width", initialScale: 1, viewportFit: "cover", themeColor: "#14231d" };
