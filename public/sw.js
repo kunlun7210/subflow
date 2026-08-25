@@ -1,4 +1,4 @@
-const CACHE_NAME = "subflow-v6";
+const CACHE_NAME = "subflow-v7";
 const APP_SHELL = ["./", "./manifest.webmanifest", "./apple-touch-icon.png?v=2", "./icon-192.png?v=2", "./icon-512.png?v=2", "./og.png", "./clients/surge.png", "./clients/shadowrocket.png", "./clients/clash-stash.png", "./clients/loon.png", "./clients/quantumult-x.png", "./clients/hiddify.png", "./clients/egern.png"];
 
 self.addEventListener("install", event => {
@@ -14,11 +14,15 @@ self.addEventListener("fetch", event => {
   const url = new URL(request.url);
   if (request.method !== "GET" || url.origin !== self.location.origin) return;
   if (request.mode === "navigate") {
-    event.respondWith(fetch(request).then(response => {
+    const networkUpdate = fetch(request, { cache: "no-store" }).then(response => {
+      if (!response.ok) return response;
       const copy = response.clone();
-      caches.open(CACHE_NAME).then(cache => cache.put("./", copy));
-      return response;
-    }).catch(() => caches.match("./")));
+      return caches.open(CACHE_NAME)
+        .then(cache => cache.put("./", copy))
+        .then(() => response);
+    });
+    event.waitUntil(networkUpdate.then(() => undefined).catch(() => undefined));
+    event.respondWith(caches.match("./").then(cached => cached || networkUpdate));
     return;
   }
   event.respondWith(caches.match(request).then(cached => cached || fetch(request).then(response => {
