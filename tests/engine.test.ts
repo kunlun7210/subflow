@@ -1,10 +1,13 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import * as yaml from "js-yaml";
+import { IPCountryDatabase } from "../lib/ip-country.ts";
 import { configurationFilename, formatDownloadDate } from "../lib/filename.ts";
 import { generateConfig, generateConfigAsync } from "../lib/generator.ts";
 import { parseSubscription } from "../lib/parser.ts";
-import { PRESET_META } from "../lib/rules.ts";
+import { countryCodeForText, enrichNodeCountries } from "../lib/regions.ts";
+import { ACL_REVISION, PRESET_META } from "../lib/rules.ts";
 import { isHttpSubscriptionURL, isIpSubscriptionURL, loadSubscriptionInput, SubscriptionLoadError } from "../lib/source.ts";
 
 const ss = "ss://YWVzLTI1Ni1nY206cGFzc3dvcmQ=@hk.example.com:8388#Hong%20Kong";
@@ -130,20 +133,23 @@ test("Surge 5 profile uses documented testing and remote-rule parameters", () =>
   assert.doesNotMatch(generated.content, /Unsupported VLESS/);
 });
 
-test("Surge uses compatible Hysteria 2 certificate handling and preserves bandwidth", () => {
+test("Surge preserves Hysteria 2 certificate verification and bandwidth", () => {
   const explicit = parseSubscription("hy2://secret@hy2.invalid:443?sni=hy2.invalid&skip-cert-verify=false&download-bandwidth=5000&ports=20000-21000,22000#Synthetic%20HY2").nodes;
   const generated = generateConfig(explicit, "surge", "mini");
-  assert.match(generated.content, / = hysteria2, hy2\.invalid, 443, password=secret, sni=hy2\.invalid, skip-cert-verify=true, download-bandwidth=5000, port-hopping=20000-21000;22000, udp-relay=true/);
+  assert.match(generated.content, / = hysteria2, hy2\.invalid, 443, password=secret, sni=hy2\.invalid, download-bandwidth=5000, port-hopping=20000-21000;22000, udp-relay=true/);
+  assert.doesNotMatch(generated.content, /skip-cert-verify=true/);
 
   const compatibleDefault = parseSubscription("hy2://secret@hy2.invalid:443?sni=hy2.invalid#Synthetic%20HY2").nodes;
-  assert.match(generateConfig(compatibleDefault, "surge", "mini").content, /skip-cert-verify=true, download-bandwidth=1000, udp-relay=true/);
+  assert.doesNotMatch(generateConfig(compatibleDefault, "surge", "mini").content, /skip-cert-verify=true/);
+  const insecure = parseSubscription("hy2://secret@hy2.invalid:443?sni=hy2.invalid&skip-cert-verify=true#Synthetic%20HY2").nodes;
+  assert.match(generateConfig(insecure, "surge", "mini").content, /skip-cert-verify=true/);
 });
 
-test("inline-rule clients resolve public rules without sending node data", async () => {
+test("inline-rule clients use the pinned offline snapshot without network requests", async () => {
   const requested: string[] = [];
   const fakeFetch: typeof fetch = async input => {
     requested.push(String(input));
-    return new Response("DOMAIN-SUFFIX,example.ai\nIP-CIDR,192.0.2.0/24,no-resolve\n");
+    return new Response(readFileSync("public/data/acl4ssr-snapshot.json"), { headers: { "content-type": "application/json" } });
   };
   const nodes = parseSubscription([ss, trojan].join("\n")).nodes;
   for (const target of ["quanx", "hiddify", "egern"] as const) {
@@ -151,8 +157,56 @@ test("inline-rule clients resolve public rules without sending node data", async
     assert.ok(generated.ruleCount > 1);
     assert.match(generated.content, /custom\.example/);
   }
-  assert.ok(requested.every(url => url.startsWith("https://raw.githubusercontent.com/ACL4SSR/ACL4SSR/")));
+  assert.ok(requested.length > 0);
+  assert.ok(requested.every(url => url === "http://localhost/data/acl4ssr-snapshot.json"));
   assert.ok(requested.every(url => !url.includes("shared-secret") && !url.includes("hk.example.com")));
+  assert.equal(ACL_REVISION, "c498ae4911f15b19c5ceaef6f8737ca8705b4430");
+  assert.doesNotMatch(generateConfig(nodes, "clash", "mini").content, /ACL4SSR\/master/);
+});
+
+test("skips transports a target cannot express instead of emitting broken nodes", () => {
+  const grpcVMess = JSON.stringify({ v: "2", ps: "gRPC VMess", add: "grpc.invalid", port: "443", id: "22222222-2222-2222-2222-222222222222", aid: "0", net: "grpc", path: "service", tls: "tls" });
+  const vmessNode = parseSubscription(`vmess://${Buffer.from(grpcVMess).toString("base64")}`).nodes;
+  const surge = generateConfig(vmessNode, "surge", "mini");
+  assert.equal(surge.supported, 0);
+  assert.match(surge.skippedReasons.join(" "), /GRPC/);
+
+  const reality = parseSubscription("vless://short-id@reality.invalid:443?security=reality&type=grpc&serviceName=tunnel&pbk=public-key&sid=abcd&fp=chrome#Reality").nodes;
+  const clash = generateConfig(reality, "clash", "mini");
+  assert.equal(clash.supported, 1);
+  assert.match(clash.content, /grpc-service-name: tunnel/);
+  assert.match(clash.content, /public-key: public-key/);
+  assert.match(clash.content, /client-fingerprint: chrome/);
+  assert.equal(generateConfig(reality, "loon", "mini").supported, 0);
+  assert.equal(generateConfig(reality, "quanx", "mini").supported, 0);
+});
+
+test("rejects lossy WireGuard and incomplete Hysteria 2 inputs", () => {
+  const multiPeer = `proxies:\n  - name: Multi Peer\n    type: wireguard\n    server: wg.invalid\n    port: 51820\n    private-key: private\n    ip: 10.0.0.2/32\n    peers:\n      - server: one.invalid\n        public-key: one\n      - server: two.invalid\n        public-key: two\n`;
+  assert.equal(parseSubscription(multiPeer).nodes.length, 0);
+  assert.equal(parseSubscription("hy2://secret@hy2.invalid:443?obfs=salamander#Incomplete").nodes.length, 0);
+});
+
+test("preserves Shadowsocks v2ray-plugin transport options", () => {
+  const document = `proxies:\n  - name: Plugin SS\n    type: ss\n    server: ss.invalid\n    port: 443\n    cipher: aes-256-gcm\n    password: secret\n    plugin: v2ray-plugin\n    plugin-opts:\n      mode: websocket\n      tls: true\n      host: cdn.invalid\n      path: /plugin\n`;
+  const generated = generateConfig(parseSubscription(document).nodes, "clash", "mini");
+  assert.match(generated.content, /tls: true/);
+  assert.match(generated.content, /host: cdn\.invalid/);
+  assert.match(generated.content, /path: \/plugin/);
+});
+
+test("country matching avoids ordinary-word false positives and uses the offline IP database", async () => {
+  assert.equal(countryCodeForText("Rio de Janeiro"), null);
+  assert.equal(countryCodeForText("Contact us"), null);
+  assert.equal(countryCodeForText("US 01"), "US");
+  assert.equal(countryCodeForText("Korea Premium"), "KR");
+  const database = new IPCountryDatabase(
+    new Uint8Array(readFileSync("public/ip-country/IPCountryIPv4.bin")),
+    new Uint8Array(readFileSync("public/ip-country/IPCountryIPv6.bin")),
+  );
+  assert.equal(database.countryCode("8.8.8.8"), "US");
+  const enriched = await enrichNodeCountries([{ protocol: "trojan", name: "Node 01", server: "8.8.8.8", port: 443, password: "secret" }], async () => database);
+  assert.equal(enriched[0].countryCode, "US");
 });
 
 test("neutralizes config syntax in untrusted node names", () => {

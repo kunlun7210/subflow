@@ -3,14 +3,17 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 const serviceWorker = await readFile(new URL("../public/sw.js", import.meta.url), "utf8");
+const builtServiceWorker = await readFile(new URL("../pages-dist/sw.js", import.meta.url), "utf8");
 const indexHtml = await readFile(new URL("../index.html", import.meta.url), "utf8");
 
-test("navigation uses cached shell immediately and refreshes it in the background", () => {
-  assert.match(serviceWorker, /const CACHE_NAME = "subflow-v7"/);
-  assert.match(serviceWorker, /const networkUpdate = fetch\(request, \{ cache: "no-store" \}\)/);
-  assert.match(serviceWorker, /event\.waitUntil\(networkUpdate/);
-  assert.match(serviceWorker, /caches\.match\("\.\/"\)\.then\(cached => cached \|\| networkUpdate\)/);
+test("navigation uses one atomically precached shell version", () => {
+  assert.match(serviceWorker, /const CACHE_NAME = "subflow-v8"/);
+  assert.match(serviceWorker, /caches\.match\("\.\/"\)\.then\(cached => cached \|\| fetch\(request\)\)/);
+  assert.doesNotMatch(serviceWorker, /cache\.put\("\.\/"/);
   assert.doesNotMatch(serviceWorker, /event\.respondWith\(fetch\(request\)/);
+  assert.match(builtServiceWorker, /const CACHE_NAME = "subflow-[0-9a-f]{12}"/);
+  assert.match(builtServiceWorker, /\.\/assets\//);
+  assert.doesNotMatch(builtServiceWorker, /ip-country\/IPCountryIPv[46]\.bin/);
 });
 
 test("the document paints the app background before JavaScript starts", () => {

@@ -59,6 +59,8 @@ export interface ProxyNode {
   wireGuardDNS?: string;
   plugin?: "obfs" | "v2ray-plugin";
   pluginMode?: string;
+  wireGuardPeerCount?: number;
+  countryCode?: string;
 }
 
 export interface ParseResult {
@@ -78,4 +80,5 @@ export interface GeneratedConfig {
   aiEligible: number;
   regionGroups: number;
   ruleCount: number;
+  skippedReasons: string[];
 }

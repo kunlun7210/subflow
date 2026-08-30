@@ -1,4 +1,4 @@
-const CACHE_NAME = "subflow-v7";
+const CACHE_NAME = "subflow-v8";
 const APP_SHELL = ["./", "./manifest.webmanifest", "./apple-touch-icon.png?v=2", "./icon-192.png?v=2", "./icon-512.png?v=2", "./og.png", "./clients/surge.png", "./clients/shadowrocket.png", "./clients/clash-stash.png", "./clients/loon.png", "./clients/quantumult-x.png", "./clients/hiddify.png", "./clients/egern.png"];
 
 self.addEventListener("install", event => {
@@ -14,15 +14,10 @@ self.addEventListener("fetch", event => {
   const url = new URL(request.url);
   if (request.method !== "GET" || url.origin !== self.location.origin) return;
   if (request.mode === "navigate") {
-    const networkUpdate = fetch(request, { cache: "no-store" }).then(response => {
-      if (!response.ok) return response;
-      const copy = response.clone();
-      return caches.open(CACHE_NAME)
-        .then(cache => cache.put("./", copy))
-        .then(() => response);
-    });
-    event.waitUntil(networkUpdate.then(() => undefined).catch(() => undefined));
-    event.respondWith(caches.match("./").then(cached => cached || networkUpdate));
+    // A new worker pre-caches HTML and its hashed JS/CSS as one version.
+    // Never replace only the cached HTML: that can point at assets which are
+    // not available yet when the device goes offline between deployments.
+    event.respondWith(caches.match("./").then(cached => cached || fetch(request)));
     return;
   }
   event.respondWith(caches.match(request).then(cached => cached || fetch(request).then(response => {

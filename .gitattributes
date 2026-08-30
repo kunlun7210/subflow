@@ -1,0 +1,3 @@
+# Preserve the pinned upstream snapshots byte-for-byte; their SHA-256 values
+# are verified during the build and some originals contain a final blank line.
+resources/acl4ssr/** whitespace=-blank-at-eof

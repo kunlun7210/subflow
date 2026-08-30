@@ -1,4 +1,5 @@
 import * as yaml from "js-yaml";
+import { compatibility } from "./compatibility";
 import type { ClientTarget, GeneratedConfig, ProxyNode, RulePreset } from "./model";
 import { groupNodesByRegion } from "./regions";
 import { parseCustomRules, POLICIES, resolveRuleLines, ruleSourceURL, ruleSources, targetNeedsInlineRules, type ResolvedRule } from "./rules";
@@ -31,31 +32,16 @@ function csv(value?: string): string[] {
 }
 
 function uniqueNames(nodes: ProxyNode[]): ProxyNode[] {
-  const counts = new Map<string, number>();
+  const counts = new Map<string, number>([
+    ...Object.values(POLICIES).map(name => [safeName(name), 1] as const),
+    ["DIRECT", 1], ["REJECT", 1], ["direct", 1], ["block", 1],
+  ]);
   return nodes.map(node => {
     const base = safeName(node.name) || `${node.server}:${node.port}`;
     const count = (counts.get(base) ?? 0) + 1;
     counts.set(base, count);
     return { ...node, name: count === 1 ? base : `${base} · ${count}` };
   });
-}
-
-function supports(target: ClientTarget, node: ProxyNode): boolean {
-  const matrix: Record<ClientTarget, Set<ProxyNode["protocol"]>> = {
-    clash: new Set(["ss", "ssr", "vmess", "vless", "trojan", "hysteria", "hysteria2", "tuic", "wireguard", "anytls", "socks5", "http"]),
-    surge: new Set(["ss", "vmess", "trojan", "hysteria2", "tuic", "wireguard", "anytls", "socks5", "http"]),
-    shadowrocket: new Set(["ss", "ssr", "vmess", "vless", "trojan", "hysteria", "hysteria2", "tuic", "wireguard", "anytls", "socks5", "http"]),
-    loon: new Set(["ss", "ssr", "vmess", "vless", "trojan", "hysteria2", "wireguard", "anytls", "socks5", "http"]),
-    quanx: new Set(["ss", "ssr", "vmess", "vless", "trojan", "anytls", "socks5", "http"]),
-    hiddify: new Set(["ss", "vmess", "vless", "trojan", "hysteria", "hysteria2", "tuic", "wireguard", "anytls", "socks5", "http"]),
-    egern: new Set(["ss", "vmess", "vless", "trojan", "hysteria2", "tuic", "wireguard", "anytls", "socks5", "http"]),
-  };
-  if (!matrix[target].has(node.protocol)) return false;
-  if (node.protocol === "wireguard" && (!node.wireGuardPrivateKey || !node.wireGuardPublicKey || (!node.wireGuardIPv4 && !node.wireGuardIPv6))) return false;
-  if (node.protocol === "hysteria2" && node.obfs && node.obfs.toLowerCase() !== "salamander") return false;
-  if (target === "loon" && node.protocol === "hysteria2" && Boolean(node.obfs || node.obfsPassword)) return false;
-  if (target === "surge" && node.protocol === "ss" && node.plugin === "v2ray-plugin") return false;
-  return true;
 }
 
 function buildGroups(nodes: ProxyNode[], preset: RulePreset): PolicyGroup[] {
@@ -119,11 +105,11 @@ function clashProxy(node: ProxyNode): Record<string, unknown> {
     return proxy;
   }
   if (node.protocol === "ssr") return { ...proxy, cipher: node.cipher ?? "aes-256-cfb", password: node.password ?? "", protocol: node.protocolName ?? "origin", obfs: node.obfs ?? "plain", ...(node.protocolParam ? { "protocol-param": node.protocolParam } : {}), ...(node.obfsParam ? { "obfs-param": node.obfsParam } : {}) };
-  if (node.protocol === "hysteria") return { ...proxy, "auth-str": node.password ?? "", up: node.upMbps ?? 50, down: node.downMbps ?? 100, ...(node.sni ? { sni: node.sni } : {}), ...(node.obfs ? { obfs: node.obfs } : {}), ...(node.protocolName ? { protocol: node.protocolName } : {}), "skip-cert-verify": Boolean(node.skipCertVerify) };
-  if (node.protocol === "hysteria2") return { ...proxy, password: node.password ?? "", ...(node.sni ? { sni: node.sni } : {}), ...(node.portHopping ? { ports: node.portHopping } : {}), ...(node.obfs && node.obfsPassword ? { obfs: node.obfs, "obfs-password": node.obfsPassword } : {}), "skip-cert-verify": Boolean(node.skipCertVerify) };
-  if (node.protocol === "tuic") return { ...proxy, uuid: node.uuid ?? "", password: node.password ?? "", ...(node.sni ? { sni: node.sni } : {}), ...(node.congestionControl ? { "congestion-controller": node.congestionControl } : {}), ...(node.udpRelayMode ? { "udp-relay-mode": node.udpRelayMode } : {}), "skip-cert-verify": Boolean(node.skipCertVerify) };
-  if (node.protocol === "wireguard") return { ...proxy, "private-key": node.wireGuardPrivateKey ?? "", "public-key": node.wireGuardPublicKey ?? "", ...(node.wireGuardIPv4 ? { ip: node.wireGuardIPv4 } : {}), ...(node.wireGuardIPv6 ? { ipv6: node.wireGuardIPv6 } : {}), "allowed-ips": csv(node.wireGuardAllowedIPs || "0.0.0.0/0,::/0"), ...(node.wireGuardPreSharedKey ? { "pre-shared-key": node.wireGuardPreSharedKey } : {}), ...(node.wireGuardReserved ? { reserved: csv(node.wireGuardReserved).map(Number) } : {}), ...(node.wireGuardMTU ? { mtu: node.wireGuardMTU } : {}) };
-  if (node.protocol === "anytls") return { ...proxy, password: node.password ?? "", ...(node.sni ? { sni: node.sni } : {}), "skip-cert-verify": Boolean(node.skipCertVerify), ...(node.idleSessionCheckInterval ? { "idle-session-check-interval": node.idleSessionCheckInterval } : {}), ...(node.idleSessionTimeout ? { "idle-session-timeout": node.idleSessionTimeout } : {}), ...(node.minIdleSession ? { "min-idle-session": node.minIdleSession } : {}) };
+  if (node.protocol === "hysteria") return { ...proxy, "auth-str": node.password ?? "", up: node.upMbps ?? 50, down: node.downMbps ?? 100, ...(node.sni ? { sni: node.sni } : {}), ...(node.obfs ? { obfs: node.obfs } : {}), ...(node.protocolName ? { protocol: node.protocolName } : {}), ...(node.alpn ? { alpn: csv(node.alpn) } : {}), ...(node.certificateFingerprint ? { fingerprint: node.certificateFingerprint } : {}), "skip-cert-verify": Boolean(node.skipCertVerify) };
+  if (node.protocol === "hysteria2") return { ...proxy, password: node.password ?? "", ...(node.sni ? { sni: node.sni } : {}), ...(node.portHopping ? { ports: node.portHopping } : {}), ...(node.obfs && node.obfsPassword ? { obfs: node.obfs, "obfs-password": node.obfsPassword } : {}), ...(node.alpn ? { alpn: csv(node.alpn) } : {}), ...(node.certificateFingerprint ? { fingerprint: node.certificateFingerprint } : {}), "skip-cert-verify": Boolean(node.skipCertVerify) };
+  if (node.protocol === "tuic") return { ...proxy, uuid: node.uuid ?? "", password: node.password ?? "", ...(node.sni ? { sni: node.sni } : {}), ...(node.congestionControl ? { "congestion-controller": node.congestionControl } : {}), ...(node.udpRelayMode ? { "udp-relay-mode": node.udpRelayMode } : {}), ...(node.portHopping ? { ports: node.portHopping } : {}), ...(node.alpn ? { alpn: csv(node.alpn) } : {}), ...(node.certificateFingerprint ? { fingerprint: node.certificateFingerprint } : {}), ...(node.fingerprint ? { "client-fingerprint": node.fingerprint } : {}), "skip-cert-verify": Boolean(node.skipCertVerify) };
+  if (node.protocol === "wireguard") return { ...proxy, "private-key": node.wireGuardPrivateKey ?? "", "public-key": node.wireGuardPublicKey ?? "", ...(node.wireGuardIPv4 ? { ip: node.wireGuardIPv4 } : {}), ...(node.wireGuardIPv6 ? { ipv6: node.wireGuardIPv6 } : {}), "allowed-ips": csv(node.wireGuardAllowedIPs || "0.0.0.0/0,::/0"), ...(node.wireGuardPreSharedKey ? { "pre-shared-key": node.wireGuardPreSharedKey } : {}), ...(node.wireGuardReserved ? { reserved: csv(node.wireGuardReserved).map(Number) } : {}), ...(node.wireGuardMTU ? { mtu: node.wireGuardMTU } : {}), ...(node.wireGuardPersistentKeepalive ? { "persistent-keepalive": node.wireGuardPersistentKeepalive } : {}), ...(node.wireGuardDNS ? { dns: csv(node.wireGuardDNS) } : {}) };
+  if (node.protocol === "anytls") return { ...proxy, password: node.password ?? "", ...(node.sni ? { sni: node.sni } : {}), ...(node.alpn ? { alpn: csv(node.alpn) } : {}), ...(node.certificateFingerprint ? { fingerprint: node.certificateFingerprint } : {}), ...(node.fingerprint ? { "client-fingerprint": node.fingerprint } : {}), "skip-cert-verify": Boolean(node.skipCertVerify), ...(node.idleSessionCheckInterval ? { "idle-session-check-interval": node.idleSessionCheckInterval } : {}), ...(node.idleSessionTimeout ? { "idle-session-timeout": node.idleSessionTimeout } : {}), ...(node.minIdleSession ? { "min-idle-session": node.minIdleSession } : {}) };
   if (node.protocol === "socks5" || node.protocol === "http") {
     if (node.username) proxy.username = node.username;
     if (node.password) proxy.password = node.password;
@@ -138,10 +124,18 @@ function clashProxy(node: ProxyNode): Record<string, unknown> {
   if (node.tls) proxy.tls = true;
   if (node.sni) proxy.servername = node.sni;
   if (node.skipCertVerify) proxy["skip-cert-verify"] = true;
-  if (node.fingerprint) proxy["client-fingerprint"] = node.fingerprint;
+  if (node.fingerprint || node.realityPublicKey) proxy["client-fingerprint"] = node.fingerprint ?? "chrome";
+  if (node.certificateFingerprint) proxy.fingerprint = node.certificateFingerprint;
   if (node.alpn) proxy.alpn = csv(node.alpn);
   if (transport === "ws") proxy["ws-opts"] = { ...(normalizedPath(node.path) ? { path: normalizedPath(node.path) } : {}), ...(node.host ? { headers: { Host: node.host } } : {}) };
   if (transport === "grpc") proxy["grpc-opts"] = { "grpc-service-name": node.path ?? "" };
+  if (transport === "http") proxy["http-opts"] = { path: [normalizedPath(node.path) ?? "/"], ...(node.host ? { headers: { Host: [node.host] } } : {}) };
+  if (transport === "h2") proxy["h2-opts"] = { path: normalizedPath(node.path) ?? "/", ...(node.host ? { host: [node.host] } : {}) };
+  if (transport === "httpupgrade") {
+    proxy.network = "ws";
+    proxy["ws-opts"] = { path: normalizedPath(node.path) ?? "/", ...(node.host ? { headers: { Host: node.host } } : {}), "v2ray-http-upgrade": true };
+  }
+  if (transport === "xhttp") proxy["xhttp-opts"] = { path: normalizedPath(node.path) ?? "/", ...(node.host ? { host: node.host } : {}) };
   if (node.realityPublicKey) proxy["reality-opts"] = { "public-key": node.realityPublicKey, ...(node.realityShortId ? { "short-id": node.realityShortId } : {}) };
   return proxy;
 }
@@ -165,7 +159,7 @@ function clash(nodes: ProxyNode[], preset: RulePreset, customText: string): stri
     `MATCH,${POLICIES.final}`,
   ];
   const document = { "mixed-port": 7890, "allow-lan": false, mode: "rule", "log-level": "warning", ipv6: true, proxies: nodes.map(clashProxy), "proxy-groups": clashGroups(buildGroups(nodes, preset)), "rule-providers": providers, rules };
-  return `# 由「流转」在本机生成\n# ACL4SSR 公开规则由客户端直接更新；订阅凭据不会写入规则 URL\n\n${yaml.dump(document, { noRefs: true, lineWidth: -1 })}`;
+  return `# 由「流转」在本机生成\n# ACL4SSR 规则已固定版本；订阅凭据不会写入规则 URL\n\n${yaml.dump(document, { noRefs: true, lineWidth: -1 })}`;
 }
 
 function tlsOptions(node: ProxyNode, includeTLS = true): string[] {
@@ -217,9 +211,7 @@ function textNode(node: ProxyNode, shadowrocket: boolean, index: number): string
     fields = [
       "hysteria2", node.server, String(node.port), `password=${confValue(node.password ?? "")}`,
       ...(node.sni ? [`sni=${confValue(node.sni)}`] : []),
-      // Providers can publish a strict Clash value while their working Surge
-      // profile disables verification for the same Hysteria 2 endpoint.
-      "skip-cert-verify=true",
+      ...(node.skipCertVerify ? ["skip-cert-verify=true"] : []),
       ...(node.alpn ? [`alpn=${confValue(node.alpn)}`] : []),
       `download-bandwidth=${node.downMbps ?? 1000}`,
       ...(node.portHopping ? [`port-hopping=${confValue(node.portHopping.replace(/,/g, ";"))}`] : []),
@@ -336,7 +328,15 @@ function singBoxTLS(node: ProxyNode): Record<string, unknown> | undefined {
 
 function singBoxOutbound(node: ProxyNode): Record<string, unknown> {
   const outbound: Record<string, unknown> = { tag: node.name, type: node.protocol === "ss" ? "shadowsocks" : node.protocol === "socks5" ? "socks" : node.protocol, server: node.server, server_port: node.port };
-  if (node.protocol === "ss") Object.assign(outbound, { method: node.cipher ?? "aes-256-gcm", password: node.password ?? "" });
+  if (node.protocol === "ss") {
+    Object.assign(outbound, { method: node.cipher ?? "aes-256-gcm", password: node.password ?? "" });
+    if (node.plugin) {
+      outbound.plugin = node.plugin === "obfs" ? "obfs-local" : "v2ray-plugin";
+      outbound.plugin_opts = node.plugin === "obfs"
+        ? [`obfs=${node.pluginMode ?? "http"}`, ...(node.host ? [`obfs-host=${node.host}`] : [])].join(";")
+        : ["mode=websocket", ...(node.tls ? ["tls"] : []), ...(node.host ? [`host=${node.host}`] : []), ...(node.path ? [`path=${normalizedPath(node.path)}`] : [])].join(";");
+    }
+  }
   else if (node.protocol === "vmess") Object.assign(outbound, { uuid: node.uuid ?? "", security: node.cipher ?? "auto", alter_id: node.alterId ?? 0 });
   else if (node.protocol === "vless") Object.assign(outbound, { uuid: node.uuid ?? "", ...(node.flow ? { flow: node.flow } : {}) });
   else if (["trojan", "hysteria2", "anytls"].includes(node.protocol)) outbound.password = node.password ?? "";
@@ -348,6 +348,8 @@ function singBoxOutbound(node: ProxyNode): Record<string, unknown> {
   const tls = singBoxTLS(node); if (tls) outbound.tls = tls;
   if (node.transport === "ws") outbound.transport = { type: "ws", path: normalizedPath(node.path) ?? "/", ...(node.host ? { headers: { Host: node.host } } : {}) };
   if (node.transport === "grpc") outbound.transport = { type: "grpc", service_name: node.path ?? "" };
+  if (node.transport === "http" || node.transport === "h2") outbound.transport = { type: "http", path: normalizedPath(node.path) ?? "/", ...(node.host ? { host: [node.host] } : {}) };
+  if (node.transport === "httpupgrade") outbound.transport = { type: "httpupgrade", path: normalizedPath(node.path) ?? "/", ...(node.host ? { host: node.host } : {}) };
   return outbound;
 }
 
@@ -383,6 +385,12 @@ function egernProxy(node: ProxyNode): Record<string, unknown> {
   if (node.sni) body.sni = node.sni;
   if (node.skipCertVerify && node.protocol !== "ss") body.skip_tls_verify = true;
   if (node.realityPublicKey) body.reality = { public_key: node.realityPublicKey, ...(node.realityShortId ? { short_id: node.realityShortId } : {}) };
+  if (["vmess", "vless", "trojan"].includes(node.protocol) && node.transport && node.transport !== "tcp") {
+    if (node.transport === "ws") body.transport = { [node.tls ? "wss" : "ws"]: { path: normalizedPath(node.path) ?? "/", ...(node.host ? { headers: { Host: node.host } } : {}), ...(node.tls && node.sni ? { sni: node.sni } : {}) } };
+    else if (node.transport === "http") body.transport = { http1: { path: normalizedPath(node.path) ?? "/", ...(node.host ? { headers: { Host: node.host } } : {}) } };
+    else if (node.transport === "h2") body.transport = { http2: { path: normalizedPath(node.path) ?? "/", ...(node.host ? { headers: { Host: node.host } } : {}), ...(node.sni ? { sni: node.sni } : {}) } };
+    else if (node.transport === "grpc") body.transport = { grpc: { ...(node.path ? { service_name: node.path.replace(/^\//, "") } : {}), ...(node.sni ? { sni: node.sni } : {}) } };
+  }
   return { [type]: body };
 }
 
@@ -401,7 +409,9 @@ function egern(nodes: ProxyNode[], preset: RulePreset, rules: ResolvedRule[]): s
 
 function generateWithRules(inputNodes: ProxyNode[], target: ClientTarget, preset: RulePreset, customText: string, resolvedRules: ResolvedRule[]): GeneratedConfig {
   const all = uniqueNames(inputNodes);
-  const supported = all.filter(node => supports(target, node));
+  const checks = all.map(node => compatibility(target, node));
+  const supported = checks.filter(check => check.supported).map(check => check.node);
+  const skippedReasons = [...new Set(checks.filter(check => !check.supported).flatMap(check => check.reason ? [check.reason] : []))];
   let content: string;
   if (target === "clash") content = clash(supported, preset, customText);
   else if (target === "surge") content = surgeLike(supported, preset, customText, false);
@@ -422,6 +432,7 @@ function generateWithRules(inputNodes: ProxyNode[], target: ClientTarget, preset
     aiEligible: supported.length,
     regionGroups: groupNodesByRegion(supported).length,
     ruleCount: targetNeedsInlineRules(target) ? resolvedRules.length : ruleSources(preset).length + parseCustomRules(customText).length,
+    skippedReasons,
   };
 }
 

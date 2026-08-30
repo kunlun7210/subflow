@@ -27,7 +27,25 @@ export const POLICIES = {
   final: "🐟 漏网之鱼",
 } as const;
 
-const ACL_BASE = "https://raw.githubusercontent.com/ACL4SSR/ACL4SSR/master/Clash";
+export const ACL_REVISION = "c498ae4911f15b19c5ceaef6f8737ca8705b4430";
+const ACL_BASE = `https://raw.githubusercontent.com/ACL4SSR/ACL4SSR/${ACL_REVISION}/Clash`;
+
+interface RuleSnapshot { revision: string; rules: Record<string, string[]>; }
+let snapshotPromise: Promise<RuleSnapshot> | null = null;
+
+function loadSnapshot(fetcher: typeof fetch): Promise<RuleSnapshot> {
+  if (snapshotPromise && fetcher === fetch) return snapshotPromise;
+  const base = typeof document === "undefined" ? "http://localhost/" : document.baseURI;
+  const request = fetcher(new URL("./data/acl4ssr-snapshot.json", base), { cache: "force-cache", credentials: "omit", referrerPolicy: "no-referrer" })
+    .then(async response => {
+      if (!response.ok) throw new Error(`bundled rules HTTP ${response.status}`);
+      const result = await response.json() as RuleSnapshot;
+      if (result.revision !== ACL_REVISION) throw new Error("bundled ACL4SSR revision mismatch");
+      return result;
+    });
+  if (fetcher === fetch) snapshotPromise = request;
+  return request;
+}
 
 export interface RuleSource {
   id: string;
@@ -168,16 +186,6 @@ export function parseCustomRules(text: string): ResolvedRule[] {
   });
 }
 
-function cleanRemoteLine(line: string): string | null {
-  const clean = line.trim().replace(/^\s*-\s*/, "");
-  if (!clean || clean.startsWith("#") || clean.startsWith(";") || clean.startsWith("payload:")) return null;
-  const parts = clean.split(",").map(item => item.trim());
-  if (parts.length < 2) return null;
-  const type = parts[0].toUpperCase();
-  if (!["DOMAIN", "DOMAIN-SUFFIX", "DOMAIN-KEYWORD", "IP-CIDR", "IP-CIDR6", "IP6-CIDR", "GEOIP", "PROCESS-NAME", "DEST-PORT", "SRC-PORT", "PROTOCOL"].includes(type)) return null;
-  return [type, parts[1], ...parts.slice(2).filter(part => part.toLowerCase() === "no-resolve")].join(",");
-}
-
 export function targetNeedsInlineRules(target: ClientTarget): boolean {
   return target === "quanx" || target === "hiddify" || target === "egern";
 }
@@ -188,14 +196,11 @@ export async function resolveRuleLines(
   fetcher: typeof fetch = fetch,
 ): Promise<ResolvedRule[]> {
   const custom = parseCustomRules(customText);
-  const responses = await Promise.all(ruleSources(preset).map(async source => {
-    const response = await fetcher(ruleSourceURL(source), { cache: "no-store", credentials: "omit", referrerPolicy: "no-referrer" });
-    if (!response.ok) throw new Error(`ruleset ${source.id} HTTP ${response.status}`);
-    const text = await response.text();
-    return text.split(/\r?\n/).flatMap(line => {
-      const cleaned = cleanRemoteLine(line);
-      return cleaned ? [{ line: cleaned, policy: source.policy }] : [];
-    });
-  }));
-  return [...responses.flat(), ...custom];
+  const snapshot = await loadSnapshot(fetcher);
+  const resolved = ruleSources(preset).flatMap(source => {
+    const lines = snapshot.rules[source.file];
+    if (!lines) throw new Error(`bundled ruleset missing: ${source.file}`);
+    return lines.map(line => ({ line, policy: source.policy }));
+  });
+  return [...resolved, ...custom];
 }

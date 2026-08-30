@@ -6,8 +6,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { generateConfigAsync } from "../lib/generator";
 import { configurationFilename } from "../lib/filename";
 import { parseSubscription } from "../lib/parser";
-import { groupNodesByRegion } from "../lib/regions";
-import { PRESET_META, targetNeedsInlineRules } from "../lib/rules";
+import { enrichNodeCountries, groupNodesByRegion } from "../lib/regions";
+import { ACL_REVISION, PRESET_META, targetNeedsInlineRules } from "../lib/rules";
 import { isHttpSubscriptionURL, loadSubscriptionInput, SubscriptionLoadError } from "../lib/source";
 import type { ClientTarget, GeneratedConfig, ProxyNode, RulePreset } from "../lib/model";
 
@@ -46,7 +46,9 @@ export default function Home() {
   const ruleFileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (window.location.protocol === "https:" && "serviceWorker" in navigator) navigator.serviceWorker.register("./sw.js").catch(() => undefined);
+    if (window.location.protocol === "https:" && "serviceWorker" in navigator) {
+      navigator.serviceWorker.register("./sw.js", { updateViaCache: "none" }).then(registration => registration.update()).catch(() => undefined);
+    }
   }, []);
 
   useEffect(() => {
@@ -59,7 +61,7 @@ export default function Home() {
     })
       .then(result => { if (!cancelled) setGenerated(result); })
       .catch(() => {
-        if (!cancelled) { setGenerated(null); setRuleError("公开规则同步失败，请检查网络后重试；节点和订阅不会随请求发送。"); }
+        if (!cancelled) { setGenerated(null); setRuleError("内置规则快照读取失败，请重新载入页面。"); }
       })
       .finally(() => { if (!cancelled) setGenerating(false); });
     return () => { cancelled = true; };
@@ -71,9 +73,10 @@ export default function Home() {
   }, {}), [nodes]);
   const regions = useMemo(() => groupNodesByRegion(nodes), [nodes]);
 
-  function parse(text: string) {
+  async function parse(text: string) {
     const result = parseSubscription(text);
-    setWarnings(result.warnings); setNodes(result.nodes);
+    const resolvedNodes = await enrichNodeCountries(result.nodes);
+    setWarnings(result.warnings); setNodes(resolvedNodes);
     setError(result.nodes.length ? "" : result.warnings[0] ?? "没有发现可用节点。");
   }
 
@@ -81,7 +84,7 @@ export default function Home() {
     const value = input.trim();
     if (!value) { setError("请先粘贴订阅链接或订阅内容。"); return; }
     setBusy(true); setError(""); setWarnings([]); setRawFallback(false);
-    try { parse((await loadSubscriptionInput(value)).text); }
+    try { await parse((await loadSubscriptionInput(value)).text); }
     catch (reason) {
       if (reason instanceof SubscriptionLoadError) {
         setRawFallback(isHttpSubscriptionURL(value));
@@ -101,7 +104,7 @@ export default function Home() {
   async function chooseFile(file?: File) {
     if (!file) return;
     if (file.size > 5_000_000) { setError("文件超过 5 MB，为避免手机内存不足已停止读取。"); return; }
-    parse(await file.text()); setSource("");
+    await parse(await file.text()); setSource("");
     if (fileRef.current) fileRef.current.value = "";
   }
 
@@ -157,10 +160,10 @@ export default function Home() {
 
         <section className="target-card">
           <div className="section-heading compact"><div><p>03 / FORMAT</p><h2>选择目标客户端</h2></div></div>
-          <div className="target-grid">{targets.map(item => <button key={item.id} type="button" className={target === item.id ? "target active" : "target"} onClick={() => setTarget(item.id)}><img className="target-icon" src={item.icon} alt="" aria-hidden="true" /><span><strong>{item.name}</strong><small>{item.note}</small></span><i aria-hidden="true" /></button>)}</div>
+          <div className="target-grid">{targets.map(item => <button key={item.id} type="button" aria-pressed={target === item.id} className={target === item.id ? "target active" : "target"} onClick={() => setTarget(item.id)}><img className="target-icon" src={item.icon} alt="" aria-hidden="true" /><span><strong>{item.name}</strong><small>{item.note}</small></span><i aria-hidden="true" /></button>)}</div>
           <div className="rule-library">
-            <div className="rule-library-heading"><div><strong>内置规则集</strong><small>AI 分组沿用 ACL4SSR 全分组的默认候选</small></div><span>与 GitHub 公开规则同步</span></div>
-            <div className="rule-cards">{presetOrder.map(id => { const meta = PRESET_META[id]; return <button type="button" key={id} className={preset === id ? "rule-card active" : "rule-card"} onClick={() => setPreset(id)}><i aria-hidden="true" /><span><strong>{meta.title}{id === "full" && <em>常用</em>}</strong><small>{meta.description}</small><b>{meta.sources} 个公开规则集 · 约 {meta.groups} 组</b></span></button>; })}</div>
+            <div className="rule-library-heading"><div><strong>内置规则集</strong><small>AI 分组沿用 ACL4SSR 全分组的默认候选</small></div><span>固定快照 {ACL_REVISION.slice(0, 7)}</span></div>
+            <div className="rule-cards">{presetOrder.map(id => { const meta = PRESET_META[id]; return <button type="button" key={id} aria-pressed={preset === id} className={preset === id ? "rule-card active" : "rule-card"} onClick={() => setPreset(id)}><i aria-hidden="true" /><span><strong>{meta.title}{id === "full" && <em>常用</em>}</strong><small>{meta.description}</small><b>{meta.sources} 个内置规则集 · 约 {meta.groups} 组</b></span></button>; })}</div>
             {preset === "full" && <p className="rule-note">已移除：微软 Bing、云盘与服务、网易云音乐、游戏平台、巴哈姆特、奈飞视频。</p>}
             <details className="custom-rules"><summary>导入自己的规则</summary><p>支持 DOMAIN、DOMAIN-SUFFIX、DOMAIN-KEYWORD、IP-CIDR、GEOIP 等常见规则行。</p><textarea value={customRules} onChange={event => setCustomRules(event.target.value)} placeholder={'DOMAIN-SUFFIX,example.com,AI\nIP-CIDR,192.0.2.0/24,DIRECT,no-resolve'} spellCheck={false} /><div><button type="button" onClick={pasteRules}>粘贴规则</button><button type="button" onClick={() => ruleFileRef.current?.click()}>选择规则文件</button>{customRules && <button type="button" onClick={() => setCustomRules("")}>清空</button>}</div><input ref={ruleFileRef} className="hidden-file" type="file" accept=".txt,.list,.conf,text/plain" onChange={event => chooseRuleFile(event.target.files?.[0])} /></details>
           </div>
@@ -168,9 +171,9 @@ export default function Home() {
 
         <section className="export-card">
           <div className="export-heading"><div><p>READY TO EXPORT</p><h2>{generating ? "正在生成配置…" : generated ? "配置已在本机生成" : "等待规则同步"}</h2>{generated && <span>{generated.supported} 个写入 · {generated.skipped} 个不兼容节点跳过 · {generated.regionGroups} 个地区组 · {generated.ruleCount} 条/组规则</span>}</div><div className="export-actions"><button className="secondary" type="button" onClick={copyConfiguration} disabled={!generated}>{copied ? "已复制 ✓" : "复制配置"}</button><button className="primary" type="button" onClick={downloadConfiguration} disabled={!generated}>下载文件 <span>↓</span></button></div></div>
-          {targetNeedsInlineRules(target) && <div className="sync-note">该客户端需要把公开规则转换后写入文件；仅请求 ACL4SSR 公共规则，不会发送你的订阅或节点。</div>}
+          {targetNeedsInlineRules(target) && <div className="sync-note">该客户端所需规则已从内置 ACL4SSR 快照写入文件，离线也能生成。</div>}
           {ruleError && <div className="message error" role="alert"><b>规则未完成</b><span>{ruleError}</span></div>}
-          {generated?.skipped ? <div className="compat-note">为避免生成“看似正常但无法连接”的配置，目标客户端不能忠实表达的协议会明确跳过。</div> : null}
+          {generated?.skipped ? <div className="compat-note">为避免生成“看似正常但无法连接”的配置，已跳过不兼容节点：{generated.skippedReasons.join("；") || "目标客户端无法忠实表达"}。</div> : null}
           {generated && <details className="preview"><summary>查看配置预览</summary><pre>{generated.content}</pre></details>}
         </section>
       </>}

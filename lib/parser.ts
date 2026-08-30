@@ -318,6 +318,9 @@ function parseHysteria2(raw: string): ProxyNode | null {
     if (!server || !port || !password) return null;
     const query = url.searchParams;
     const skipCertValue = query.get("skip-cert-verify") ?? query.get("allowInsecure") ?? query.get("allow_insecure") ?? query.get("insecure");
+    const obfs = query.get("obfs") || undefined;
+    const obfsPassword = query.get("obfs-password") || query.get("obfspassword") || query.get("obfs_password") || undefined;
+    if (Boolean(obfs) !== Boolean(obfsPassword)) return null;
     return {
       protocol: "hysteria2",
       name: normalizedName(safeDecode(url.hash.slice(1)), `Hysteria 2 · ${server}`),
@@ -329,8 +332,8 @@ function parseHysteria2(raw: string): ProxyNode | null {
       sni: query.get("sni") || query.get("servername") || query.get("peer") || undefined,
       alpn: query.get("alpn") || undefined,
       skipCertVerify: skipCertValue === null ? undefined : ["1", "true"].includes(skipCertValue.toLowerCase()),
-      obfs: query.get("obfs") || undefined,
-      obfsPassword: query.get("obfs-password") || query.get("obfspassword") || query.get("obfs_password") || undefined,
+      obfs,
+      obfsPassword,
       portHopping: query.get("mport") || query.get("ports") || query.get("server-ports") || query.get("port-hopping") || undefined,
       certificateFingerprint: query.get("fingerprint") || undefined,
       upMbps: positiveNumber(query.get("upmbps") || query.get("up") || query.get("upload-bandwidth") || query.get("upload_bandwidth")),
@@ -377,10 +380,21 @@ function fromClash(value: unknown): ProxyNode | null {
   const usesPassword = ["ss", "ssr", "trojan", "hysteria2", "anytls"].includes(protocol);
   const credential = usesPassword ? String(proxy.password ?? "") : String(proxy.uuid ?? "");
   const peers = Array.isArray(proxy.peers) ? proxy.peers as Array<Record<string, unknown>> : [];
+  if (protocol === "wireguard" && peers.length > 1) return null;
   const wireGuardPeer = peers[0] ?? {};
   if (["ss", "ssr", "vmess", "vless", "trojan", "hysteria2", "anytls"].includes(protocol) && !credential) return null;
   if (protocol === "tuic" && (!proxy.uuid || !proxy.password)) return null;
   if (protocol === "wireguard" && (!proxy["private-key"] || !(proxy["public-key"] || wireGuardPeer["public-key"]))) return null;
+  const pluginOptions = proxy["plugin-opts"] && typeof proxy["plugin-opts"] === "object"
+    ? proxy["plugin-opts"] as Record<string, unknown>
+    : {};
+  const plugin = proxy.plugin === "obfs" ? "obfs" : proxy.plugin === "v2ray-plugin" ? "v2ray-plugin" : undefined;
+  if (proxy.plugin && !plugin) return null;
+  const pluginMode = pluginOptions.mode ? String(pluginOptions.mode) : undefined;
+  if (plugin === "v2ray-plugin" && !["", "ws", "websocket"].includes((pluginMode ?? "websocket").toLowerCase())) return null;
+  const obfs = proxy.obfs ? String(proxy.obfs) : undefined;
+  const obfsPassword = proxy["obfs-password"] ? String(proxy["obfs-password"]) : undefined;
+  if (protocol === "hysteria2" && Boolean(obfs) !== Boolean(obfsPassword)) return null;
   return {
     protocol,
     name: normalizedName(proxy.name, `${protocol.toUpperCase()} · ${server}`),
@@ -391,26 +405,26 @@ function fromClash(value: unknown): ProxyNode | null {
     username: proxy.username ? String(proxy.username) : undefined,
     uuid: protocol === "vmess" || protocol === "vless" ? credential : undefined,
     alterId: Number(proxy.alterId ?? 0) || 0,
-    transport: ["hysteria", "hysteria2", "tuic", "wireguard"].includes(protocol) ? "udp" : String(proxy.network ?? "tcp").toLowerCase(),
-    tls: ["trojan", "hysteria", "hysteria2", "tuic", "anytls"].includes(protocol) || boolean(proxy.tls) || Boolean(proxy.servername) || Boolean(proxy.sni),
+    transport: plugin === "v2ray-plugin" ? "ws" : ["hysteria", "hysteria2", "tuic", "wireguard"].includes(protocol) ? "udp" : String(proxy.network ?? "tcp").toLowerCase(),
+    tls: ["trojan", "hysteria", "hysteria2", "tuic", "anytls"].includes(protocol) || boolean(proxy.tls) || boolean(pluginOptions.tls) || Boolean(proxy.servername) || Boolean(proxy.sni),
     sni: proxy.servername ? String(proxy.servername) : proxy.sni ? String(proxy.sni) : undefined,
-    host: headers.Host ? String(headers.Host) : headers.host ? String(headers.host) : undefined,
-    path: ws.path ? String(ws.path) : grpc["grpc-service-name"] ? String(grpc["grpc-service-name"]) : undefined,
+    host: pluginOptions.host ? String(pluginOptions.host) : headers.Host ? String(headers.Host) : headers.host ? String(headers.host) : undefined,
+    path: pluginOptions.path ? String(pluginOptions.path) : ws.path ? String(ws.path) : grpc["grpc-service-name"] ? String(grpc["grpc-service-name"]) : undefined,
     alpn: Array.isArray(proxy.alpn) ? proxy.alpn.join(",") : proxy.alpn ? String(proxy.alpn) : undefined,
     flow: proxy.flow ? String(proxy.flow) : undefined,
     fingerprint: proxy["client-fingerprint"] ? String(proxy["client-fingerprint"]) : undefined,
     realityPublicKey: reality["public-key"] ? String(reality["public-key"]) : undefined,
     realityShortId: reality["short-id"] ? String(reality["short-id"]) : undefined,
     skipCertVerify: boolean(proxy["skip-cert-verify"]),
-    obfs: proxy.obfs ? String(proxy.obfs) : undefined,
-    obfsPassword: proxy["obfs-password"] ? String(proxy["obfs-password"]) : undefined,
+    obfs,
+    obfsPassword,
     protocolName: proxy.protocol ? String(proxy.protocol) : undefined,
     protocolParam: proxy["protocol-param"] ? String(proxy["protocol-param"]) : undefined,
     obfsParam: proxy["obfs-param"] ? String(proxy["obfs-param"]) : undefined,
     portHopping: proxy.ports ? String(proxy.ports) : undefined,
     certificateFingerprint: protocol === "hysteria2" && proxy.fingerprint ? String(proxy.fingerprint) : undefined,
-    plugin: proxy.plugin === "obfs" ? "obfs" : proxy.plugin === "v2ray-plugin" ? "v2ray-plugin" : undefined,
-    pluginMode: proxy["plugin-opts"] && typeof proxy["plugin-opts"] === "object" ? String((proxy["plugin-opts"] as Record<string, unknown>).mode ?? "") : undefined,
+    plugin,
+    pluginMode,
     congestionControl: proxy["congestion-controller"] ? String(proxy["congestion-controller"]) : proxy["congestion-control"] ? String(proxy["congestion-control"]) : undefined,
     udpRelayMode: proxy["udp-relay-mode"] ? String(proxy["udp-relay-mode"]) : undefined,
     upMbps: positiveNumber(proxy.up),
@@ -428,6 +442,7 @@ function fromClash(value: unknown): ProxyNode | null {
     wireGuardMTU: positiveNumber(proxy.mtu),
     wireGuardPersistentKeepalive: positiveNumber(proxy["persistent-keepalive"]),
     wireGuardDNS: Array.isArray(proxy.dns) ? proxy.dns.join(",") : proxy.dns ? String(proxy.dns) : undefined,
+    wireGuardPeerCount: peers.length || (protocol === "wireguard" ? 1 : undefined),
   };
 }
 
