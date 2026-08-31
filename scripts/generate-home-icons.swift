@@ -15,7 +15,7 @@ guard CTFontGetGlyphsForCharacters(font, &character, &glyph, 1),
 }
 let bounds = path.boundingBoxOfPath
 
-for (filename, size) in [("apple-touch-icon-flow.png", 180), ("icon-flow-192.png", 192), ("icon-flow-512.png", 512)] {
+for (filename, size) in [("favicon-flow-32.png", 32), ("favicon-flow-48.png", 48), ("apple-touch-icon-flow.png", 180), ("icon-flow-192.png", 192), ("icon-flow-512.png", 512), ("og.png", 512)] {
     guard let context = CGContext(data: nil, width: size, height: size, bitsPerComponent: 8,
         bytesPerRow: size * 4, space: CGColorSpaceCreateDeviceRGB(),
         bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.noneSkipLast.rawValue) else {

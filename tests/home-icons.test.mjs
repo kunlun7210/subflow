@@ -19,3 +19,22 @@ test("Home Screen icons use opaque square PNGs and matching precached URLs", asy
     assert.ok(worker.includes(`"./${filename}"`), "New icon URL must be precached exactly");
   }
 });
+
+test("bookmark and social preview icons use the Home Screen artwork", async () => {
+  const output = new URL("../pages-dist/", import.meta.url);
+  const html = await readFile(new URL("index.html", output), "utf8");
+  const worker = await readFile(new URL("sw.js", output), "utf8");
+  for (const size of [32, 48]) {
+    const filename = `favicon-flow-${size}.png`;
+    const png = await readFile(new URL(filename, output));
+    assert.equal(png.readUInt32BE(16), size);
+    assert.equal(png.readUInt32BE(20), size);
+    assert.equal(png[25], 2);
+    assert.ok(html.includes(`sizes="${size}x${size}" href="./${filename}"`));
+    assert.ok(worker.includes(`"./${filename}"`));
+  }
+  assert.match(html, /property="og:image" content="https:\/\/kunlun7210.github.io\/subflow\/icon-flow-512.png"/);
+  assert.match(html, /name="twitter:image" content="https:\/\/kunlun7210.github.io\/subflow\/icon-flow-512.png"/);
+  assert.doesNotMatch(html, /og\.png|summary_large_image/);
+  assert.deepEqual(await readFile(new URL("og.png", output)), await readFile(new URL("icon-flow-512.png", output)));
+});

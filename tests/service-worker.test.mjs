@@ -7,7 +7,7 @@ const builtServiceWorker = await readFile(new URL("../pages-dist/sw.js", import.
 const indexHtml = await readFile(new URL("../index.html", import.meta.url), "utf8");
 
 test("navigation uses one atomically precached shell version", () => {
-  assert.match(serviceWorker, /const CACHE_NAME = "subflow-v9"/);
+  assert.match(serviceWorker, /const CACHE_NAME = "subflow-v10"/);
   assert.match(serviceWorker, /caches\.match\("\.\/"\)\.then\(cached => cached \|\| fetch\(request\)\)/);
   assert.doesNotMatch(serviceWorker, /cache\.put\("\.\/"/);
   assert.doesNotMatch(serviceWorker, /event\.respondWith\(fetch\(request\)/);
