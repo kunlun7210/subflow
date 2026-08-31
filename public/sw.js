@@ -1,5 +1,5 @@
-const CACHE_NAME = "subflow-v8";
-const APP_SHELL = ["./", "./manifest.webmanifest", "./apple-touch-icon.png?v=2", "./icon-192.png?v=2", "./icon-512.png?v=2", "./og.png", "./clients/surge.png", "./clients/shadowrocket.png", "./clients/clash-stash.png", "./clients/loon.png", "./clients/quantumult-x.png", "./clients/hiddify.png", "./clients/egern.png"];
+const CACHE_NAME = "subflow-v9";
+const APP_SHELL = ["./", "./manifest.webmanifest", "./apple-touch-icon-flow.png", "./icon-flow-192.png", "./icon-flow-512.png", "./og.png", "./clients/surge.png", "./clients/shadowrocket.png", "./clients/clash-stash.png", "./clients/loon.png", "./clients/quantumult-x.png", "./clients/hiddify.png", "./clients/egern.png"];
 
 self.addEventListener("install", event => {
   event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(APP_SHELL)).then(() => self.skipWaiting()));
